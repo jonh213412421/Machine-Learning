@@ -25,7 +25,7 @@ model = Sequential([
 # Compilar modelo
 model.compile(optimizer=Adam(learning_rate=0.001), loss='mse')
 
-# plot loss
+# perda
 fig, (ax, ax1) = plt.subplots(1,2)
 losses = []
 
@@ -53,12 +53,12 @@ class PlotLossCallback(tf.keras.callbacks.Callback):
     def on_epoch_end(self, epoch, logs=None):
         plot_loss(logs, X_train, y_train)
 
-# Train the model with the custom callback
+# Treina o modelo
 history = model.fit(
     X_train, y_train,
     epochs=1000,
     batch_size=32,
-    verbose=1,  # Suppress default logging
+    verbose=1, 
     callbacks=[PlotLossCallback()]
 )
 
@@ -71,16 +71,14 @@ regressor = PySRRegressor(
 
 predictions = model.predict(X_train)
 
-# Step 3: Use PySR for symbolic regression
-
 # Prepare data for PySR
 data = np.hstack((X_train, predictions))
 targets = y_train
 
-# Fit the symbolic regressor
+# Faz a regressão
 regressor.fit(X_train, y_train)
 
-# Get the best equations
+# pega a melhor equação
 equations = regressor.get_best()
 
 plt.text(-6, 500, str(equations), fontsize=12, color='red', bbox=dict(facecolor='white', alpha=0.5))
@@ -90,7 +88,7 @@ print(equations)
 plt.ioff()  # desliga modo iterativo
 plt.show()  # mostra o gráfico final
 
-# Generate test data
+# gera dados de teste
 X_test, y_test = generate_data(num_samples=100)
 
 print(f'Prediction for x = {X_test[0]}: {model.predict(X_test)[0][0]:.4f}')
