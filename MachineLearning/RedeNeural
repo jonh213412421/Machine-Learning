@@ -1,13 +1,12 @@
 import numpy as np
 import streamlit as st
-import tensorflow as tf
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.optimizers import Adam
 import matplotlib.pyplot as plt
 from pysr import PySRRegressor
 
-def teste(coordenadas, epochs):
+def fit(coordenadas, epochs, parar):
 
     X_train = np.array([p["x"] for p in coordenadas], dtype=np.float32).reshape(-1, 1)
     y_train = np.array([p["y"] for p in coordenadas], dtype=np.float32).reshape(-1, 1)
@@ -21,11 +20,12 @@ def teste(coordenadas, epochs):
     model.compile(optimizer=Adam(learning_rate=0.001), loss='mse')
 
     plot_placeholder = st.empty()
+    #cria os elementos
     progress_bar = st.progress(0)
+    status_placeholder = st.empty()
 
     # Treinamento manual por época
     for epoch in range(epochs):
-        history = model.fit(X_train, y_train, epochs=1, batch_size=32, verbose=0)
 
         # Previsões para plot
         y_pred = model.predict(X_train, verbose=0)
@@ -39,8 +39,10 @@ def teste(coordenadas, epochs):
         ax.set_ylabel('y')
         ax.legend()
         plot_placeholder.pyplot(fig)
-
+        status_placeholder.markdown(f"<h3 style='text-align: center;'>Trabalhando... {((epoch + 1) / epochs) * 100:.2f}%</h3>", unsafe_allow_html=True)
         progress_bar.progress((epoch + 1) / epochs)
+        if parar:
+            break
 
     regressor = PySRRegressor(
         niterations=1000,
@@ -61,6 +63,5 @@ def teste(coordenadas, epochs):
     print("Melhor equação encontrada pela PySR:")
     print(equations)
 
-
-coordenadas_exemplo = [{"x": x, "y": x ** 3} for x in np.linspace(-10, 10, 100)]
-teste(coordenadas_exemplo, 2500)
+#coordenadas_exemplo = [{"x": x, "y": x ** 3} for x in np.linspace(-10, 10, 100)]
+#fit(coordenadas_exemplo, 2500)
