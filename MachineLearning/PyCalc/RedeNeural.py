@@ -4,18 +4,12 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.optimizers import Adam
 import matplotlib.pyplot as plt
-from pysr import PySRRegressor
 
 def fit(coordenadas, epochs):
-    parar = st.button("Parar", key="botao_parar")
-    print(f"parar no loop: {parar}")
+
     X_train = np.array([p["x"] for p in coordenadas], dtype=np.float32).reshape(-1, 1)
     y_train = np.array([p["y"] for p in coordenadas], dtype=np.float32).reshape(-1, 1)
-    if st.session_state.get("parar", False):
-        st.warning("Treinamento interrompido.")
-        st.session_state.clear()
-        st.rerun()  # Reinicia app com tudo resetado
-        return
+
     model = Sequential([
         Dense(25, input_dim=1, activation='relu'),
         Dense(25, activation='relu'),
@@ -26,6 +20,14 @@ def fit(coordenadas, epochs):
     plot_placeholder = st.empty()
     progress_bar = st.progress(0)
     status_placeholder = st.empty()
+    button_placeholder = st.empty()
+
+    with button_placeholder:
+        parar = st.button("Parar", key="botao_parar_treinamento")
+        if parar:
+            st.session_state.parar = True
+            st.session_state.iniciado = False
+            return
 
     # Escala fixa
     x_min, x_max = X_train.min(), X_train.max()
@@ -34,22 +36,10 @@ def fit(coordenadas, epochs):
     padding_y = 0.1 * (y_max - y_min + 1e-5)
 
     for epoch in range(epochs):
+
         print(f"botão parar na epoch {epoch}")
-        if st.session_state.iniciado:
 
-            st.markdown("""
-                <style>
-                div.st-key-botao_parar button {
-                    background-color: red !important;
-                    color: white !important;
-                }
-                div.st-key-parar button:hover {
-                    box-shadow: 0px 4px 12px rgba(255, 0, 0, 0.6);
-                    transform: scale(1.05);
-                }
-                </style>
-            """, unsafe_allow_html=True)
-
+        model.fit(X_train, y_train, epochs=1, verbose=0)
 
         y_pred = model.predict(X_train, verbose=0)
 
