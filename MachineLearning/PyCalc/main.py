@@ -9,10 +9,8 @@ st.markdown("## Entre com os pontos ou faça o upload de um arquivo CSV (pontos 
 if "coordenadas" not in st.session_state:
     st.session_state.coordenadas = [{"x": 0.0, "y": 0.0}]
 
-#print(f"coordenadas no session state logo após o if coordenadas: {st.session_state.coodenadas}")
-
-#if "last_filled" not in st.session_state:
-#    st.session_state.last_filled = False
+if "parar_placeholder" not in st.session_state:
+    st.session_state.parar_placeholder = st.empty()
 
 coordenadas = st.session_state.coordenadas
 st.session_state.parar = False
@@ -105,6 +103,7 @@ if "iniciado" not in st.session_state:
     st.session_state.iniciado = False
 
 if not st.session_state.iniciado:
+
     iniciar = st.button("Iniciar", key="iniciar")
 
     st.markdown("""
@@ -121,11 +120,36 @@ if not st.session_state.iniciado:
     """, unsafe_allow_html=True)
 
     if iniciar:
+        st.markdown("""
+            <style>
+            div.st-key-iniciar button {
+                display: none;
+                background-color: green !important;
+                color: white !important;
+            }
+            div.st-key-iniciar button:hover {
+                box-shadow: 0px 4px 12px rgba(0, 255, 0, 0.6);
+                transform: scale(1.05);
+            }
+            </style>
+        """, unsafe_allow_html=True)
+
         st.session_state.iniciado = True
+        st.markdown("""
+            <style>
+            div.st-key-botao_parar_treinamento button {
+                background-color: red !important;
+                color: white !important;
+            }
+            div.st-key-botao_parar_treinamento button:hover {
+                box-shadow: 0px 4px 12px rgba(255, 0, 0, 0.6);
+                transform: scale(1.05);
+            }
+            </style>
+        """, unsafe_allow_html=True)
         print("[REDE NEURAL INICIADA]")
         RedeNeural.fit([{"x": x, "y": x ** 3} for x in np.linspace(-10, 10, 100)], epochs)
 
-if st.button("Parar", key="botao_parar"):
-    st.session_state.parar = True
-    st.session_state.iniciado = False
-    st.rerun()
+else:
+        st.session_state.parar = True
+        st.session_state.iniciado = False
