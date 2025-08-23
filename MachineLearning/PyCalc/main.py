@@ -10,7 +10,7 @@ import RedeNeural
 def cheio(coord):
     return (coord["x"] != 0.0) or (coord["y"] != 0.0)
 
-st.markdown("<h1 style='text-align: center;'>Calculadora de Regressão Polinomial - CRP</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center;'>Calculadora de Regressão</h1>", unsafe_allow_html=True)
 st.markdown("## Entre com os pontos ou faça o upload de um arquivo CSV (pontos devem ser separados por um espaço)")
 
 #barra lateral
@@ -164,7 +164,16 @@ if "iniciado" not in st.session_state:
 
 if not st.session_state.iniciado:
 
-    iniciar = st.button("Iniciar", key="iniciar")
+    def iniciar():
+        if len(coordenadas) == 1:
+            st.warning("Nenhum dado foi inserido. Insira dados e tente novamente")
+            time.sleep(2)
+        st.session_state.iniciado = True
+        st.session_state.epochs = epochs
+        st.session_state.mostrar_csv_dialog = False
+        st.session_state.mostrar_tabela = False
+
+    iniciar = st.button("Iniciar", key="iniciar", on_click=iniciar)
 
     #estabelece o estilo do botão de iniciar
     st.markdown("""
@@ -179,17 +188,6 @@ if not st.session_state.iniciado:
         }
         </style>
     """, unsafe_allow_html=True)
-
-    if iniciar:
-        if len(coordenadas) == 1:
-            st.warning("Nenhum dado foi inserido. Insira dados e tente novamente")
-            time.sleep(2)
-            st.rerun()
-        st.session_state.iniciado = True
-        st.session_state.epochs = epochs
-        st.session_state.mostrar_csv_dialog = False
-        st.session_state.mostrar_tabela = False
-        st.rerun()
 
 if st.session_state.iniciado:
 
@@ -260,16 +258,16 @@ if st.session_state.iniciado:
                 break
 
         st.session_state.coordenadas.clear()
+        st.session_state.coordenadas = [{"x": 0.0, "y": 0.0}]
         st.session_state.modelo_treinado = True
-        status_placeholder.markdown(
-            f"<h3 style='text-align: center; color=green;'>Modelo Treinado!</h3>",
-            unsafe_allow_html=True
-        )
+        status_placeholder.markdown("<h3 style='text-align: center; color=green;'>Modelo Treinado!</h3>",unsafe_allow_html=True)
 
 if st.session_state.modelo_treinado:
 
     def resetar():
+        st.session_state.indice_epoca = 0
         st.session_state.coordenadas.clear()
+        st.session_state.coordenadas = [{"x": 0.0, "y": 0.0}]
         st.session_state.modelo_treinado = False
         st.session_state.mostrar_csv_dialog = True
         st.session_state.mostrar_tabela = True
@@ -277,9 +275,9 @@ if st.session_state.modelo_treinado:
         st.session_state.iniciado = False
         st.session_state.estado_treinamento = None
 
-    st.markdown("<span style='font-size:20px; font-weight:bold; color=green;'>Entre com o X para ser previsto:</span>", unsafe_allow_html=True)
     x = st.number_input("Entre com o X para ser previsto:", value=0.0, step=1.0, format="%.2f")
     if x is not None:
-        y = st.session_state.modelo.predict(np.array(x, dtype=np.float32).reshape(-1, 1), verbose=0)
-        st.write(f"Valor de y: {y}")
+        y = st.session_state.modelo.predict(np.array(x, dtype=np.float32).reshape(-1, 1), verbose=0)[0][0]
+        st.markdown(f"<span style='font-size:20px; font-weight:bold;'>Valor previsto para x = {x}: {y:.2f}</span>", unsafe_allow_html=True)
+
     st.button("Inserir outros dados", on_click=resetar)
