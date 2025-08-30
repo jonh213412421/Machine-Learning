@@ -42,9 +42,9 @@ def fit(modelo, coordenadas, epochs, tamanho_rede, i, parar, plot_placeholder, p
         plot_placeholder.pyplot(fig)
 
         status_placeholder.markdown(
-            f"<h3 style='text-align: center;'>Trabalhando... {((i + 1) / epochs) * 100:.2f}% | Perda: {perda:.4f}</h3>",
+            f"<h3 style='text-align: center;'>Trabalhando... {((i + 1) / epochs) * 100:.2f}% | Perda: {perda:.2f}</h3>",
             unsafe_allow_html=True
         )
         progress_bar.progress((i + 1) / epochs)
 
-    return y_pred
+    return y_pred, perda
