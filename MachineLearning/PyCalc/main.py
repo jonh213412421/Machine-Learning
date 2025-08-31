@@ -10,7 +10,7 @@ import RedeNeural
 def cheio(coord):
     return (coord["x"] != 0.0) or (coord["y"] != 0.0)
 
-st.markdown("<h1 style='text-align: center;'>Calculadora de Regressão</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center;'>Rede Neural de Regressão</h1>", unsafe_allow_html=True)
 st.markdown("## Entre com os pontos ou faça o upload de um arquivo CSV (pontos devem ser separados por um espaço)")
 
 #barra lateral
@@ -36,6 +36,9 @@ if "coordenadas" not in st.session_state:
 
 if "indice_epoca" not in st.session_state:
     st.session_state.indice_epoca = 0
+
+if "perda" not in st.session_state:
+    st.session_state.perda = 0
 
 if "estado_treinamento" not in st.session_state:
     st.session_state.estado_treinamento = None
@@ -240,12 +243,6 @@ if st.session_state.iniciado:
             st.session_state.parar = True
             st.session_state.iniciado = False
             st.session_state.estado_treinamento = None
-            st.session_state.modelo = Sequential([
-                Dense(tamanho_rede, input_dim=1, activation=st.session_state.funcao_ativacao),
-                Dense(tamanho_rede, activation=st.session_state.funcao_ativacao),
-                Dense(1)
-            ])
-            st.session_state.modelo.compile(optimizer=Adam(learning_rate=st.session_state.aprendizado), loss='mse')
 
         if st.session_state.indice_epoca == 0:
             with button_placeholder:
@@ -253,7 +250,7 @@ if st.session_state.iniciado:
 
         while st.session_state.indice_epoca < st.session_state.epochs:
             parar = st.session_state.parar
-            st.session_state.estado_treinamento, perda = RedeNeural.fit(st.session_state.modelo, coordenadas, epochs, tamanho_rede, st.session_state.indice_epoca, parar, plot_placeholder, progress_bar, status_placeholder)
+            st.session_state.estado_treinamento, st.session_state.perda = RedeNeural.fit(st.session_state.modelo, coordenadas, epochs, tamanho_rede, st.session_state.indice_epoca, parar, plot_placeholder, progress_bar, status_placeholder)
             print(f"y_pred: {st.session_state.estado_treinamento}")
             print(parar)
 
@@ -266,10 +263,10 @@ if st.session_state.iniciado:
         print(f"modelo treinado: {st.session_state.modelo_treinado}")
         st.session_state.coordenadas.clear()
         st.session_state.coordenadas = [{"x": 0.0, "y": 0.0}]
-        if perda <= 100:
+        if st.session_state.perda <= 100:
             status_placeholder.markdown("<h3 style='text-align:center; color:green;'>Modelo Treinado!</h3>",unsafe_allow_html=True)
-        if perda > 100:
-            status_placeholder.markdown(f"<h3 style='text-align:center; color:red;'>Modelo Treinado (perda: {perda:.2f})</h3>",unsafe_allow_html=True)
+        if st.session_state.perda > 100:
+            status_placeholder.markdown(f"<h3 style='text-align:center; color:red;'>Modelo Treinado (perda: {st.session_state.perda:.2f})</h3>",unsafe_allow_html=True)
 
 if st.session_state.modelo_treinado:
 
@@ -295,4 +292,4 @@ if st.session_state.modelo_treinado:
         y = st.session_state.modelo.predict(np.array(x, dtype=np.float32).reshape(-1, 1), verbose=0)[0][0]
         st.markdown(f"<span style='font-size:20px; font-weight:bold;'>Valor previsto para x = {x}: {y:.2f}</span>", unsafe_allow_html=True)
 
-    st.button("Inserir outros dados", on_click=resetar)
+    st.button("Voltar ao início", on_click=resetar)
