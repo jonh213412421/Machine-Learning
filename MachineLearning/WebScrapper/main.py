@@ -11,7 +11,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 # Configuração da chave de API da Gemini
-genai.configure(api_key="AIzaSyBCPEMihVWyBYAifjxHCB3cOXR5-IoaYCs")
+genai.configure(api_key="")
 WEBDRIVER = os.path.join(os.getcwd(), "webdriver", "msedgedriver.exe")
 
 def iniciar():
