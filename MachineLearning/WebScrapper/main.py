@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import google.generativeai as genai
 from openpyxl.reader.excel import load_workbook
@@ -15,10 +16,14 @@ genai.configure(api_key="")
 WEBDRIVER = os.path.join(os.getcwd(), "webdriver", "msedgedriver.exe")
 
 def iniciar() -> None:
-    if not os.path.exists(os.path.join(os.getcwd(), "webdriver", "msedgedriver.exe")):
-        print("Erro: Edge Driver não foi localizado. Ele deve estar localizado na pasta 'webdriver'")
-    if not os.path.exists(os.path.join(os.getcwd(), "bancos de dados")):
-        os.mkdir(os.path.join(os.getcwd(), "bancos de dados"))
+    try:
+        if not os.path.exists(os.path.join(os.getcwd(), "webdriver", "msedgedriver.exe")):
+            print("Erro: Edge Driver não foi localizado. Ele deve estar localizado na pasta 'webdriver'")
+        if not os.path.exists(os.path.join(os.getcwd(), "bancos de dados")):
+            os.mkdir(os.path.join(os.getcwd(), "bancos de dados"))
+    except Exception as e:
+        print(f"Erro na inicializacao {e}")
+
 
 #Pega os dados do site usando selenium headless. É possível alterar a posição da janela usando o argumento comentado.
 def obter_dados_texto(url_site: str) -> str:
@@ -48,18 +53,47 @@ def perguntar_a_ia_texto(texto: str, vars: str) -> str:
     #Melhorar, tornar mais robusto. A ideia é pegar três saídas diferentes, comparar e retornar o mais frequente. No entanto, usar um sorted()
     #melhora a robustez. Pode ser facilmente expandido para verificar mais do que três vezes.
     def verificar_consistencia(respostas: list) -> str:
-        #atribui cada saída gerada pela IA para um vetor diferente.
-        auxa = respostas[0]
-        auxb = respostas[1]
-        auxc = respostas[2]
-        #Comparar aux e ver qual se repete mais. Ordena as listas
-        if auxa == auxb:
-            return auxa
-        else:
-            return auxc
+        try:
+            #atribui cada saída gerada pela IA para um vetor diferente.
+            auxa = respostas[0]
+            auxa = auxa.splitlines()[1:-1]
+            auxb = respostas[1]
+            auxb = auxb.splitlines()[1:-1]
+            auxc = respostas[2]
+            auxc = auxc.splitlines()[1:-1]
+            saida = []
+            #Comparar aux e ver qual se repete mais. Ordena as listas
+            print(len(auxa))
+            for i in range(0, len(auxa)):
+                print(i)
+                if auxa[i] == auxb[i]:
+                    saida.append(auxa[i])
+                elif auxb[i] == auxc[i]:
+                    saida.append(auxb[i])
+                elif auxa[i] == auxc[i]:
+                    saida.append(auxc[i])
+                else:
+                    op = input("Erro na consistência! Recomendado tentar novamente.\n1) continuar\n2) sair\n3) rodar novamente")
+                    if op == "1":
+                        saida.append(auxa[i])
+                    elif op == "2":
+                        sys.exit()
+                    elif op == "3":
+                        print("Tentando novamente...")
+                        perguntar_a_ia_texto(texto, vars)
+                    else:
+                        print("Opção inválida! Saindo do Programa...")
+                        time.sleep(10)
+                        sys.exit()
 
-    vars = vars.split("--")
-    vars = ", ".join(vars)
+            # Elimina duplicatas
+            saida = set(saida)
+            return "\n".join(saida)
+        except Exception as e:
+            print(f"Erro na verificação de consistencia: {e}")
+
+    vars_aux = vars.split("--")
+    vars_aux = ", ".join(vars_aux)
     """Usa a IA Gemini para responder a uma pergunta baseada no texto fornecido."""
     model = genai.GenerativeModel('gemini-2.0-flash')
 
@@ -67,7 +101,7 @@ def perguntar_a_ia_texto(texto: str, vars: str) -> str:
     # É sempre importante explicar o máximo possível e colocar exemplos nos prompts
     prompt = f"""
     Analise a página seguir.
-    com base nela, crie uma tabela e a preencha com os seguintes dados: {vars}. Cada um desses dados deve representar
+    com base nela, crie uma tabela e a preencha com os seguintes dados: {vars_aux}. Cada um desses dados deve representar
     uma coluna na tabela. os dados da tabela devem ser separados com uma barra '/'. Não coloque títulos nas colunas
     Se atenha apenas aos dados fornecidos. Extraia todos os dados da página.
     Exemplo 1:
@@ -137,7 +171,7 @@ def perguntar_a_ia_imagem(caminho_imagem: str, vars: str) -> str:
 def salvar_planilha(vars, dados) -> None:
     try:
         #elimina os parêntesis no início e no final
-        dados = dados.splitlines()[1:-1]
+        dados = dados.splitlines()
         print(dados)
         num_linhas = len(dados)
         #extrai os argumentos
@@ -156,79 +190,86 @@ def salvar_planilha(vars, dados) -> None:
                 except Exception as e:
                     print(e)
         #Salva a planilha com um nome único. Importante para não haver sobreposição de dados.
-        wb.save(os.path.join(os.getcwd(), "bancos de dados", f"database-{time.strftime("%Y-%m-%d_%H-%M-%S")}.xlsx"))
-        print("Dados salvos!")
+        nome_arquivo_saida = os.path.join(os.getcwd(), "bancos de dados", f"database-{time.strftime("%Y-%m-%d_%H-%M-%S")}.xlsx")
+        wb.save(os.path.join(nome_arquivo_saida))
+        print(f"Dados salvos! Nome do arquivo: {nome_arquivo_saida}\n\n")
     except Exception as e:
         print(f"Erro: {e}")
 
 #concatena planilhas para criar banco de dados únicos
 def cat_data(caminhos: list) -> None:
-    #o i elimina a primeira linha.
-    i = 0
-    wb_combinado = Workbook()
-    ws = wb_combinado.active
-    for caminho in caminhos:
-        wb = load_workbook(caminho)
-        sh = wb.active
-        for linha in sh.iter_rows(values_only=True):
-            if i > 0:
-                ws.append(linha)
-            i += 1
+    try:
+        #o i elimina a primeira linha.
         i = 0
-    wb_combinado.save(os.path.join(os.getcwd(), "bancos de dados", f"database-combined-{time.strftime("%Y-%m-%d_%H-%M-%S")}.xlsx"))
-    print("Pronto!")
+        wb_combinado = Workbook()
+        ws = wb_combinado.active
+        for caminho in caminhos:
+            wb = load_workbook(caminho)
+            sh = wb.active
+            for linha in sh.iter_rows(values_only=True):
+                if i > 0:
+                    ws.append(linha)
+                i += 1
+            i = 0
+        wb_combinado.save(os.path.join(os.getcwd(), "bancos de dados", f"database-combined-{time.strftime("%Y-%m-%d_%H-%M-%S")}.xlsx"))
+        print("Pronto! Dados concatenados!")
+    except Exception as e:
+        print(f"Erro na combinação das bases de dados: {e}")
 
 if _name_ == "_main_":
     iniciar()
     #Loop infinito
     while True:
-        op = input("O que deseja fazer?\n1) Extrair dados de um site\n2) Extrair dados de uma imagem\n3) concatenar dados\n")
-        #Para extrair de um site
-        if op == "1":
-            try:
-                url_do_site = input("entre com o site que quer extrair informações: ")
-                vars = input("quais variáveis deseja extrair? separe-as com '--'.\n ")
-                if not url_do_site.startswith("http://") and not url_do_site.startswith("https://"):
-                    url_do_site = "https://" + url_do_site
-                nome_do_arquivo_pdf = url_do_site.replace("http://", "")
-                nome_do_arquivo_pdf = nome_do_arquivo_pdf.replace("https://", "")
-                nome_do_arquivo_pdf = nome_do_arquivo_pdf.replace("www.", "")
-                nome_do_arquivo_pdf = nome_do_arquivo_pdf.split(".")[0]
-                nome_do_arquivo_pdf = nome_do_arquivo_pdf + ".pdf"
-
-                # 1. Converte o site para PDF
-                conteudo_do_site = obter_dados_texto(url_do_site)
-
-                # 3. Faz a pergunta à IA com base no texto extraído
-                dados = perguntar_a_ia_texto(conteudo_do_site, vars)
-                print("\nResposta da IA:\n")
-                print(dados)
-                salvar_planilha(vars, dados)
-            except Exception as e:
-                print(f"Erro: {e}")
-
-        elif op == "2":
-            try:
-                caminho_imagem = filedialog.askopenfile(initialdir=os.getcwd(), filetypes=[("Todos", "."), ("PDF", ".pdf"), ("JPG", ".jpg"), ("JPEG", ".jpeg"), ("PNG", ".png")], title="Escolha o arquivo de imagem")
-                vars = input("quais variáveis deseja extrair? separe-as com '--'.\n ")
-                caminho_imagem = caminho_imagem.name
-                dados = perguntar_a_ia_imagem(caminho_imagem, vars)
-                print("\nResposta da IA:\n")
-                print(dados)
-                print(f"caminho da imagem: {caminho_imagem}")
-                salvar_planilha(vars, dados)
-            except Exception as e:
-                print(f"Erro: {e}")
-
-        elif op == "3":
-            try:
-                caminhos = filedialog.askopenfilenames(initialdir=os.getcwd(), title="Escolha os arquivos")
-                if caminhos:
-                    cat_data(caminhos)
-                else:
-                    print("Nenhum arquivo foi selecionado.")
-            except Exception as e:
-                print(f"Erro: {e}")
-
-        else:
-            print("Operação Inválida! Tente novamente.")
+        try:
+            op = input("O que deseja fazer?\n1) Extrair dados de um site\n2) Extrair dados de uma imagem\n3) Concatenar dados\n")
+            #Para extrair de um site
+            if op == "1":
+                try:
+                    url_do_site = input("entre com o site que quer extrair informações: ")
+                    vars = input("quais variáveis deseja extrair? separe-as com '--'.\n ")
+                    if not url_do_site.startswith("http://") and not url_do_site.startswith("https://"):
+                        url_do_site = "https://" + url_do_site
+                    nome_do_arquivo_pdf = url_do_site.replace("http://", "")
+                    nome_do_arquivo_pdf = nome_do_arquivo_pdf.replace("https://", "")
+                    nome_do_arquivo_pdf = nome_do_arquivo_pdf.replace("www.", "")
+                    nome_do_arquivo_pdf = nome_do_arquivo_pdf.split(".")[0]
+                    nome_do_arquivo_pdf = nome_do_arquivo_pdf + ".pdf"
+    
+                    # 1. Converte o site para PDF
+                    conteudo_do_site = obter_dados_texto(url_do_site)
+    
+                    # 3. Faz a pergunta à IA com base no texto extraído
+                    dados = perguntar_a_ia_texto(conteudo_do_site, vars)
+                    print("\nResposta da IA:\n")
+                    print(dados)
+                    salvar_planilha(vars, dados)
+                except Exception as e:
+                    print(f"Erro: {e}")
+    
+            elif op == "2":
+                try:
+                    caminho_imagem = filedialog.askopenfile(initialdir=os.getcwd(), filetypes=[("Todos", "."), ("PDF", ".pdf"), ("JPG", ".jpg"), ("JPEG", ".jpeg"), ("PNG", ".png")], title="Escolha o arquivo de imagem")
+                    vars = input("quais variáveis deseja extrair? separe-as com '--'.\n ")
+                    caminho_imagem = caminho_imagem.name
+                    dados = perguntar_a_ia_imagem(caminho_imagem, vars)
+                    print("\nResposta da IA:\n")
+                    print(dados)
+                    print(f"caminho da imagem: {caminho_imagem}")
+                    salvar_planilha(vars, dados)
+                except Exception as e:
+                    print(f"Erro: {e}")
+    
+            elif op == "3":
+                try:
+                    caminhos = filedialog.askopenfilenames(initialdir=os.getcwd(), title="Escolha os arquivos")
+                    if caminhos:
+                        cat_data(caminhos)
+                    else:
+                        print("Nenhum arquivo foi selecionado.")
+                except Exception as e:
+                    print(f"Erro: {e}")
+    
+            else:
+                print("Operação Inválida! Tente novamente.")
+        except Exception as e:
+            print(f"Erro no loop principal: {e}")
