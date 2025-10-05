@@ -61,34 +61,27 @@ def perguntar_a_ia_texto(texto: str, vars: str) -> str:
             auxb = auxb.splitlines()[1:-1]
             auxc = respostas[2]
             auxc = auxc.splitlines()[1:-1]
-            saida = []
             #Comparar aux e ver qual se repete mais. Ordena as listas
-            print(len(auxa))
-            for i in range(0, len(auxa)):
-                print(i)
-                if auxa[i] == auxb[i]:
-                    saida.append(auxa[i])
-                elif auxb[i] == auxc[i]:
-                    saida.append(auxb[i])
-                elif auxa[i] == auxc[i]:
-                    saida.append(auxc[i])
+            print(f"{sorted(set(auxa))} -> {sorted(set(auxb))} -> {sorted(set(auxc))}")
+            if sorted(set(auxa)) == sorted(set(auxb)):
+                return "\n".join(auxa)
+            if sorted(set(auxb)) == sorted(set(auxc)):
+                return "\n".join(auxb)
+            if sorted(set(auxa)) == sorted(set(auxc)):
+                return "\n".join(auxc)
+            else:
+                op = input("Erro na consistência! Recomendado tentar novamente.\n1) continuar\n2) sair\n3) rodar novamente")
+                if op == "1":
+                    return auxa
+                elif op == "2":
+                    sys.exit()
+                elif op == "3":
+                    print("Tentando novamente...")
+                    perguntar_a_ia_texto(texto, vars)
                 else:
-                    op = input("Erro na consistência! Recomendado tentar novamente.\n1) continuar\n2) sair\n3) rodar novamente")
-                    if op == "1":
-                        saida.append(auxa[i])
-                    elif op == "2":
-                        sys.exit()
-                    elif op == "3":
-                        print("Tentando novamente...")
-                        perguntar_a_ia_texto(texto, vars)
-                    else:
-                        print("Opção inválida! Saindo do Programa...")
-                        time.sleep(10)
-                        sys.exit()
-
-            # Elimina duplicatas
-            saida = set(saida)
-            return "\n".join(saida)
+                    print("Opção inválida! Saindo do Programa...")
+                    time.sleep(10)
+                    sys.exit()
         except Exception as e:
             print(f"Erro na verificação de consistencia: {e}")
 
@@ -102,7 +95,7 @@ def perguntar_a_ia_texto(texto: str, vars: str) -> str:
     prompt = f"""
     Analise a página seguir.
     com base nela, crie uma tabela e a preencha com os seguintes dados: {vars_aux}. Cada um desses dados deve representar
-    uma coluna na tabela. os dados da tabela devem ser separados com uma barra '/'. Não coloque títulos nas colunas
+    uma coluna na tabela. os dados da tabela devem ser separados com uma barra '/'. Não coloque títulos nas colunas, isso é muito importante!
     Se atenha apenas aos dados fornecidos. Extraia todos os dados da página.
     Exemplo 1:
     dados: "idade", "altura", "tipo sanguíneo"
@@ -117,6 +110,13 @@ def perguntar_a_ia_texto(texto: str, vars: str) -> str:
     Brasil/10.000/0.706
     EUA/100.000/0.850
     Japão/50.000/0.900
+    
+    Exemplo 3:
+    dados: "preço", "quantidade", "estoque"
+    resultado: 
+    5.50/7/500
+    7.50/13/100
+    9/4/25
     
     PÁGINA:
     {texto}
@@ -133,6 +133,40 @@ def perguntar_a_ia_texto(texto: str, vars: str) -> str:
 
 
 def perguntar_a_ia_imagem(caminho_imagem: str, vars: str) -> str:
+    #Melhorar, tornar mais robusto. A ideia é pegar três saídas diferentes, comparar e retornar o mais frequente. No entanto, usar um sorted()
+    #melhora a robustez. Pode ser facilmente expandido para verificar mais do que três vezes.
+    def verificar_consistencia(respostas: list) -> str:
+        try:
+            #atribui cada saída gerada pela IA para um vetor diferente.
+            auxa = respostas[0]
+            auxa = auxa.splitlines()[1:-1]
+            auxb = respostas[1]
+            auxb = auxb.splitlines()[1:-1]
+            auxc = respostas[2]
+            auxc = auxc.splitlines()[1:-1]
+            #Comparar aux e ver qual se repete mais. Ordena as listas
+            print(f"{sorted(set(auxa))} -> {sorted(set(auxb))} -> {sorted(set(auxc))}")
+            if sorted(set(auxa)) == sorted(set(auxb)):
+                return "\n".join(auxa)
+            if sorted(set(auxb)) == sorted(set(auxc)):
+                return "\n".join(auxb)
+            if sorted(set(auxa)) == sorted(set(auxc)):
+                return "\n".join(auxc)
+            else:
+                op = input("Erro na consistência! Recomendado tentar novamente.\n1) continuar\n2) sair\n3) rodar novamente")
+                if op == "1":
+                    return auxa
+                elif op == "2":
+                    sys.exit()
+                elif op == "3":
+                    print("Tentando novamente...")
+                    perguntar_a_ia_imagem(caminho_imagem, vars)
+                else:
+                    print("Opção inválida! Saindo do Programa...")
+                    time.sleep(10)
+                    sys.exit()
+        except Exception as e:
+            print(f"Erro na verificação de consistencia: {e}")
     vars = vars.split("--")
     vars = ", ".join(vars)
     imagem = Image.open(caminho_imagem)
@@ -144,7 +178,7 @@ def perguntar_a_ia_imagem(caminho_imagem: str, vars: str) -> str:
     prompt = f"""
     Analise a imagem a seguir. Use o reconhecimento de imagem.
     com base nela, crie uma tabela e a preencha com os seguintes dados: {vars}. Cada um desses dados deve representar
-    uma coluna na tabela. os dados da tabela devem ser separados com uma barra '/'. Não coloque títulos nas colunas
+    uma coluna na tabela. os dados da tabela devem ser separados com uma barra '/'. Não coloque títulos nas colunas, isso é muito importante!
     Se atenha apenas aos dados fornecidos. Extraia todos os dados da página.
     Exemplo 1:
     dados: "idade", "altura", "tipo sanguíneo"
@@ -159,6 +193,13 @@ def perguntar_a_ia_imagem(caminho_imagem: str, vars: str) -> str:
     Brasil/10.000/0.706
     EUA/100.000/0.850
     Japão/50.000/0.900
+    
+    Exemplo 3:
+    dados: "preço", "quantidade", "estoque"
+    resultado: 
+    5.50/7/500
+    7.50/13/100
+    9/4/25
     """
 
     try:
@@ -234,10 +275,10 @@ if _name_ == "_main_":
                     nome_do_arquivo_pdf = nome_do_arquivo_pdf.replace("www.", "")
                     nome_do_arquivo_pdf = nome_do_arquivo_pdf.split(".")[0]
                     nome_do_arquivo_pdf = nome_do_arquivo_pdf + ".pdf"
-    
+
                     # 1. Converte o site para PDF
                     conteudo_do_site = obter_dados_texto(url_do_site)
-    
+
                     # 3. Faz a pergunta à IA com base no texto extraído
                     dados = perguntar_a_ia_texto(conteudo_do_site, vars)
                     print("\nResposta da IA:\n")
@@ -245,7 +286,7 @@ if _name_ == "_main_":
                     salvar_planilha(vars, dados)
                 except Exception as e:
                     print(f"Erro: {e}")
-    
+
             elif op == "2":
                 try:
                     caminho_imagem = filedialog.askopenfile(initialdir=os.getcwd(), filetypes=[("Todos", "."), ("PDF", ".pdf"), ("JPG", ".jpg"), ("JPEG", ".jpeg"), ("PNG", ".png")], title="Escolha o arquivo de imagem")
@@ -258,7 +299,7 @@ if _name_ == "_main_":
                     salvar_planilha(vars, dados)
                 except Exception as e:
                     print(f"Erro: {e}")
-    
+
             elif op == "3":
                 try:
                     caminhos = filedialog.askopenfilenames(initialdir=os.getcwd(), title="Escolha os arquivos")
@@ -268,7 +309,7 @@ if _name_ == "_main_":
                         print("Nenhum arquivo foi selecionado.")
                 except Exception as e:
                     print(f"Erro: {e}")
-    
+
             else:
                 print("Operação Inválida! Tente novamente.")
         except Exception as e:
