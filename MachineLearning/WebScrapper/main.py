@@ -16,6 +16,7 @@ VERIFICACAO_TRIPLA = True
 
 
 def iniciar() -> None:
+    #inicializa o webdriver
     try:
         if not os.path.exists(os.path.join(os.getcwd(), "webdriver", "msedgedriver.exe")):
             print("Erro: Edge Driver não foi localizado. Ele deve estar localizado na pasta 'webdriver'")
@@ -24,6 +25,7 @@ def iniciar() -> None:
     except Exception as e:
         print(f"Erro na inicializacao {e}")
 
+    #armazena/pega a chave da API
     try:
         if not os.path.exists(os.path.join(os.getcwd(), "config")):
             key = input("qual é a chave API?")
@@ -239,7 +241,7 @@ def perguntar_a_ia_imagem(caminho_imagem: str, vars: str) -> str:
 
 
 # salva os dados em uma planilha
-def salvar_planilha(vars, dados) -> None:
+def salvar_planilha(vars: list, dados: str) -> None:
     try:
         # elimina os parêntesis no início e no final
         dados = dados.splitlines()
@@ -366,3 +368,4 @@ if __name__ == "__main__":
                 print("Operação Inválida! Tente novamente.")
         except Exception as e:
             print(f"Erro no loop principal: {e}")
+            
