@@ -32,11 +32,11 @@ def iniciar() -> None:
             salvar = input("deseja salvar a chave? (s/n)")
             if salvar == "s":
                 os.mkdir(os.path.join(os.getcwd(), "config"))
-                if not os.path.isfile(os.path.join(os.getcwd(), "config", "config.ini")):
-                    with open(os.path.join(os.getcwd(), "config", "config.ini"), "w") as f:
+                if not os.path.isfile(os.path.join(os.getcwd(), "config", "key.ini")):
+                    with open(os.path.join(os.getcwd(), "config", "key.ini"), "w") as f:
                         f.write(key)
         else:
-            with open(os.path.join(os.getcwd(), "config", "config.ini"), "r") as f:
+            with open(os.path.join(os.getcwd(), "config", "key.ini"), "r") as f:
                 key = f.read()
             # Configuração da chave de API da Gemini. Colocar em variável de ambiente futuramente.
             genai.configure(api_key=key)
@@ -350,11 +350,15 @@ if __name__ == "__main__":
 
             elif op == "4":
                 while True:
-                    print(f"1- Redundância (executa 3 vezes para verificar consistência de output) - {VERIFICACAO_TRIPLA}\n2) Voltar")
+                    print(f"1- Redundância (executa 3 vezes para verificar consistência de output) - {VERIFICACAO_TRIPLA}\n2) Mudar chave API\n3) Voltar\n")
                     alt = input("Digite a configuração que deseja alterar: ")
                     if alt == "1":
                         VERIFICACAO_TRIPLA = not VERIFICACAO_TRIPLA
                     if alt == "2":
+                        key = input("Digite a chave: ")
+                        with open(os.path.join(os.getcwd(), "config", "key.ini"), "w") as f:
+                            f.write(key)
+                    if alt == "3":
                         print("\n")
                         break
 
