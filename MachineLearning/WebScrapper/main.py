@@ -10,10 +10,10 @@ from selenium.webdriver.edge.options import Options as EdgeOptions
 from tkinter import filedialog
 from PIL import Image
 
-# Configuração da chave de API da Gemini. Colocar em variável de ambiente futuramente.
-genai.configure(api_key="")
-#Local do Webdriver. Automatizar o download dele futuramente?
+# Local do Webdriver. Automatizar o download dele futuramente?
 WEBDRIVER = os.path.join(os.getcwd(), "webdriver", "msedgedriver.exe")
+VERIFICACAO_TRIPLA = True
+
 
 def iniciar() -> None:
     try:
@@ -24,12 +24,31 @@ def iniciar() -> None:
     except Exception as e:
         print(f"Erro na inicializacao {e}")
 
+    try:
+        if not os.path.exists(os.path.join(os.getcwd(), "config")):
+            key = input("qual é a chave API?")
+            # Configuração da chave de API da Gemini. Colocar em variável de ambiente futuramente.
+            genai.configure(api_key=key)
+            salvar = input("deseja salvar a chave? (s/n)")
+            if salvar == "s":
+                os.mkdir(os.path.join(os.getcwd(), "config"))
+                if not os.path.isfile(os.path.join(os.getcwd(), "config", "config.ini")):
+                    with open(os.path.join(os.getcwd(), "config", "config.ini"), "w") as f:
+                        f.write(key)
+        else:
+            with open(os.path.join(os.getcwd(), "config", "config.ini"), "r") as f:
+                key = f.read()
+            # Configuração da chave de API da Gemini. Colocar em variável de ambiente futuramente.
+            genai.configure(api_key=key)
+    except Exception as e:
+        print(f"Erro ao salvar chave: {e}")
 
-#Pega os dados do site usando selenium headless. É possível alterar a posição da janela usando o argumento comentado.
+
+# Pega os dados do site usando selenium headless. É possível alterar a posição da janela usando o argumento comentado.
 def obter_dados_texto(url_site: str) -> str:
     options = EdgeOptions()
     options.add_argument("--headless")  # Modo headless
-    #options.add_argument("--window-position=3000,0")
+    # options.add_argument("--window-position=3000,0")
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
 
@@ -48,20 +67,21 @@ def obter_dados_texto(url_site: str) -> str:
     except Exception as e:
         return f"erro ao obter código da página: {e}"
 
+
 #
 def perguntar_a_ia_texto(texto: str, vars: str) -> str:
-    #Melhorar, tornar mais robusto. A ideia é pegar três saídas diferentes, comparar e retornar o mais frequente. No entanto, usar um sorted()
-    #melhora a robustez. Pode ser facilmente expandido para verificar mais do que três vezes.
+    # Melhorar, tornar mais robusto. A ideia é pegar três saídas diferentes, comparar e retornar o mais frequente. No entanto, usar um sorted()
+    # melhora a robustez. Pode ser facilmente expandido para verificar mais do que três vezes.
     def verificar_consistencia(respostas: list) -> str:
         try:
-            #atribui cada saída gerada pela IA para um vetor diferente.
+            # atribui cada saída gerada pela IA para um vetor diferente.
             auxa = respostas[0]
             auxa = auxa.splitlines()[1:-1]
             auxb = respostas[1]
             auxb = auxb.splitlines()[1:-1]
             auxc = respostas[2]
             auxc = auxc.splitlines()[1:-1]
-            #Comparar aux e ver qual se repete mais. Ordena as listas
+            # Comparar aux e ver qual se repete mais. Ordena as listas
             print(f"{sorted(set(auxa))} -> {sorted(set(auxb))} -> {sorted(set(auxc))}")
             if sorted(set(auxa)) == sorted(set(auxb)):
                 return "\n".join(auxa)
@@ -70,7 +90,8 @@ def perguntar_a_ia_texto(texto: str, vars: str) -> str:
             if sorted(set(auxa)) == sorted(set(auxc)):
                 return "\n".join(auxc)
             else:
-                op = input("Erro na consistência! Recomendado tentar novamente.\n1) continuar\n2) sair\n3) rodar novamente")
+                op = input(
+                    "Erro na consistência! Recomendado tentar novamente.\n1) continuar\n2) sair\n3) rodar novamente")
                 if op == "1":
                     return auxa
                 elif op == "2":
@@ -103,48 +124,54 @@ def perguntar_a_ia_texto(texto: str, vars: str) -> str:
     15/1.67/O+
     17/1.75/O-
     18/1.80/B+
-    
+
     Exemplo 2:
     dados: "país", "PIB em bilhões de dólares", "índice Gini"
     resultado: 
     Brasil/10.000/0.706
     EUA/100.000/0.850
     Japão/50.000/0.900
-    
+
     Exemplo 3:
     dados: "preço", "quantidade", "estoque"
     resultado: 
     5.50/7/500
     7.50/13/100
     9/4/25
-    
+
     PÁGINA:
     {texto}
     """
     try:
-        resposta = []
-        for i in range(0, 3):
-            resposta.append(model.generate_content(prompt).text)
-            print(resposta)
-        lista_final = verificar_consistencia(resposta)
-        return lista_final
+        if VERIFICACAO_TRIPLA:
+            resposta = []
+            for i in range(0, 3):
+                resposta.append(model.generate_content(prompt).text)
+                print(resposta)
+
+            lista_final = verificar_consistencia(resposta)
+            return lista_final
+        else:
+            resposta = model.generate_content(prompt).text.splitlines()[1:-1]
+            return resposta
+
     except Exception as e:
         return f"Erro ao gerar conteúdo com a IA: {e}"
 
 
 def perguntar_a_ia_imagem(caminho_imagem: str, vars: str) -> str:
-    #Melhorar, tornar mais robusto. A ideia é pegar três saídas diferentes, comparar e retornar o mais frequente. No entanto, usar um sorted()
-    #melhora a robustez. Pode ser facilmente expandido para verificar mais do que três vezes.
+    # Melhorar, tornar mais robusto. A ideia é pegar três saídas diferentes, comparar e retornar o mais frequente. No entanto, usar um sorted()
+    # melhora a robustez. Pode ser facilmente expandido para verificar mais do que três vezes.
     def verificar_consistencia(respostas: list) -> str:
         try:
-            #atribui cada saída gerada pela IA para um vetor diferente.
+            # atribui cada saída gerada pela IA para um vetor diferente.
             auxa = respostas[0]
             auxa = auxa.splitlines()[1:-1]
             auxb = respostas[1]
             auxb = auxb.splitlines()[1:-1]
             auxc = respostas[2]
             auxc = auxc.splitlines()[1:-1]
-            #Comparar aux e ver qual se repete mais. Ordena as listas
+            # Comparar aux e ver qual se repete mais. Ordena as listas
             print(f"{sorted(set(auxa))} -> {sorted(set(auxb))} -> {sorted(set(auxc))}")
             if sorted(set(auxa)) == sorted(set(auxb)):
                 return "\n".join(auxa)
@@ -153,7 +180,8 @@ def perguntar_a_ia_imagem(caminho_imagem: str, vars: str) -> str:
             if sorted(set(auxa)) == sorted(set(auxc)):
                 return "\n".join(auxc)
             else:
-                op = input("Erro na consistência! Recomendado tentar novamente.\n1) continuar\n2) sair\n3) rodar novamente")
+                op = input(
+                    "Erro na consistência! Recomendado tentar novamente.\n1) continuar\n2) sair\n3) rodar novamente")
                 if op == "1":
                     return auxa
                 elif op == "2":
@@ -167,6 +195,7 @@ def perguntar_a_ia_imagem(caminho_imagem: str, vars: str) -> str:
                     sys.exit()
         except Exception as e:
             print(f"Erro na verificação de consistencia: {e}")
+
     vars = vars.split("--")
     vars = ", ".join(vars)
     imagem = Image.open(caminho_imagem)
@@ -174,7 +203,7 @@ def perguntar_a_ia_imagem(caminho_imagem: str, vars: str) -> str:
     model = genai.GenerativeModel('gemini-2.5-flash-image-preview')
 
     # Prepara o prompt para a IA
-    #É sempre importante explicar o máximo possível e colocar exemplos nos prompts
+    # É sempre importante explicar o máximo possível e colocar exemplos nos prompts
     prompt = f"""
     Analise a imagem a seguir. Use o reconhecimento de imagem.
     com base nela, crie uma tabela e a preencha com os seguintes dados: {vars}. Cada um desses dados deve representar
@@ -193,7 +222,7 @@ def perguntar_a_ia_imagem(caminho_imagem: str, vars: str) -> str:
     Brasil/10.000/0.706
     EUA/100.000/0.850
     Japão/50.000/0.900
-    
+
     Exemplo 3:
     dados: "preço", "quantidade", "estoque"
     resultado: 
@@ -208,14 +237,15 @@ def perguntar_a_ia_imagem(caminho_imagem: str, vars: str) -> str:
     except Exception as e:
         return f"Erro ao gerar conteúdo com a IA: {e}"
 
-#salva os dados em uma planilha
+
+# salva os dados em uma planilha
 def salvar_planilha(vars, dados) -> None:
     try:
-        #elimina os parêntesis no início e no final
+        # elimina os parêntesis no início e no final
         dados = dados.splitlines()
         print(dados)
         num_linhas = len(dados)
-        #extrai os argumentos
+        # extrai os argumentos
         vars = vars.split("--")[1:]
         print(vars)
         num_cols = len(vars)
@@ -224,23 +254,25 @@ def salvar_planilha(vars, dados) -> None:
         wb = Workbook()
         ws = wb.active
         for i in range(num_cols):
-            ws.cell(row=1, column=i+1, value=vars[i])
+            ws.cell(row=1, column=i + 1, value=vars[i])
             for linha in range(num_linhas):
                 try:
-                    ws.cell(row=linha+2, column=i+1, value=dados[linha].split("/")[i])
+                    ws.cell(row=linha + 2, column=i + 1, value=dados[linha].split("/")[i])
                 except Exception as e:
                     print(e)
-        #Salva a planilha com um nome único. Importante para não haver sobreposição de dados.
-        nome_arquivo_saida = os.path.join(os.getcwd(), "bancos de dados", f"database-{time.strftime("%Y-%m-%d_%H-%M-%S")}.xlsx")
+        # Salva a planilha com um nome único. Importante para não haver sobreposição de dados.
+        nome_arquivo_saida = os.path.join(os.getcwd(), "bancos de dados",
+                                          f"database-{time.strftime("%Y-%m-%d_%H-%M-%S")}.xlsx")
         wb.save(os.path.join(nome_arquivo_saida))
         print(f"Dados salvos! Nome do arquivo: {nome_arquivo_saida}\n\n")
     except Exception as e:
         print(f"Erro: {e}")
 
-#concatena planilhas para criar banco de dados únicos
+
+# concatena planilhas para criar banco de dados únicos
 def cat_data(caminhos: list) -> None:
     try:
-        #o i elimina a primeira linha.
+        # o i elimina a primeira linha.
         i = 0
         wb_combinado = Workbook()
         ws = wb_combinado.active
@@ -252,18 +284,21 @@ def cat_data(caminhos: list) -> None:
                     ws.append(linha)
                 i += 1
             i = 0
-        wb_combinado.save(os.path.join(os.getcwd(), "bancos de dados", f"database-combined-{time.strftime("%Y-%m-%d_%H-%M-%S")}.xlsx"))
+        wb_combinado.save(os.path.join(os.getcwd(), "bancos de dados",
+                                       f"database-combined-{time.strftime("%Y-%m-%d_%H-%M-%S")}.xlsx"))
         print("Pronto! Dados concatenados!")
     except Exception as e:
         print(f"Erro na combinação das bases de dados: {e}")
 
-if _name_ == "_main_":
+
+if __name__ == "__main__":
     iniciar()
-    #Loop infinito
+    # Loop infinito
     while True:
         try:
-            op = input("O que deseja fazer?\n1) Extrair dados de um site\n2) Extrair dados de uma imagem\n3) Concatenar dados\n")
-            #Para extrair de um site
+            op = input(
+                "O que deseja fazer?\n1) Extrair dados de um site\n2) Extrair dados de uma imagem\n3) Concatenar dados\n4) Configurações\n")
+            # Para extrair de um site
             if op == "1":
                 try:
                     url_do_site = input("entre com o site que quer extrair informações: ")
@@ -289,7 +324,10 @@ if _name_ == "_main_":
 
             elif op == "2":
                 try:
-                    caminho_imagem = filedialog.askopenfile(initialdir=os.getcwd(), filetypes=[("Todos", "."), ("PDF", ".pdf"), ("JPG", ".jpg"), ("JPEG", ".jpeg"), ("PNG", ".png")], title="Escolha o arquivo de imagem")
+                    caminho_imagem = filedialog.askopenfile(initialdir=os.getcwd(),
+                                                            filetypes=[("Todos", "."), ("PDF", ".pdf"), ("JPG", ".jpg"),
+                                                                       ("JPEG", ".jpeg"), ("PNG", ".png")],
+                                                            title="Escolha o arquivo de imagem")
                     vars = input("quais variáveis deseja extrair? separe-as com '--'.\n ")
                     caminho_imagem = caminho_imagem.name
                     dados = perguntar_a_ia_imagem(caminho_imagem, vars)
@@ -309,6 +347,16 @@ if _name_ == "_main_":
                         print("Nenhum arquivo foi selecionado.")
                 except Exception as e:
                     print(f"Erro: {e}")
+
+            elif op == "4":
+                while True:
+                    print(f"1- Redundância (executa 3 vezes para verificar consistência de output) - {VERIFICACAO_TRIPLA}\n2) Voltar")
+                    alt = input("Digite a configuração que deseja alterar: ")
+                    if alt == "1":
+                        VERIFICACAO_TRIPLA = not VERIFICACAO_TRIPLA
+                    if alt == "2":
+                        print("\n")
+                        break
 
             else:
                 print("Operação Inválida! Tente novamente.")
