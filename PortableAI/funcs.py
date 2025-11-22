@@ -11,12 +11,18 @@ def iniciar() -> None:
     if not os.path.isfile(os.path.join(os.getcwd(), 'Llama', 'llama-run.exe')):
         return "Erro! llama-run.exe não está presente no diretório Llama."
 
+    if not os.path.exists(os.path.join(os.getcwd(), 'data')):
+        os.mkdir(os.path.join(os.getcwd(), 'data'))
+
 def listar_modelos() -> str:
     return os.listdir("./Llama/Modelos")
 
 def selecionar_modelo(opcao) -> str:
     if opcao == "Adicionar modelo":
         return filedialog.askopenfilename(initialdir="./Llama/Modelos", filetypes=(("model files", "*.gguf"),))
+    else:
+        print(f"Modelo selecionado: {opcao}")
+        return f"Modelo selecionado: {opcao}"
 
 def carregar_arquivo() -> ((str, str)):
     try:
@@ -42,7 +48,8 @@ def carregar_arquivo() -> ((str, str)):
 def fazer_prompt(modelo: str, prompt: str) -> str:
     print("[RODANDO PROMPT]")
 
-    os.chdir(os.path.join(os.getcwd(), "Llama"))
+    dir_inicial = os.getcwd()
+    os.chdir(os.path.join(dir_inicial, "Llama"))
 
     # Comando final
     cmd = f"llama-run.exe .\\Modelos\\{modelo} -p {prompt}'"
@@ -69,6 +76,8 @@ def fazer_prompt(modelo: str, prompt: str) -> str:
     except Exception as e:
         print(f"Erro ao executar o modelo: {e}")
         return "Erro!"
+    finally:
+        os.chdir(dir_inicial)
 
 print(listar_modelos())
 # iniciar()
