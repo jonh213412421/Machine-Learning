@@ -40,7 +40,6 @@ class PromptThread(QThread):
             self.thread_running = False
             print(self.thread_running)
 
-
     def stop(self):
         self.thread_running = False  # chamada externa para cancelar
 
@@ -68,8 +67,7 @@ class MinhaJanela(QWidget):
             r_escaped = html.escape(r)
             # Insere texto com estilo sem quebrar linha
             r = r.replace(" ", "&nbsp;") # <- para adicionar os espaços
-            cursor.insertHtml(
-                f"<span style='font-family: Arial; font-size: 12pt; color: black'>{r}</span>")
+            cursor.insertHtml(f"<span style='font-family: Arial; font-size: 12pt; color: black; margin-bottom: 25px; display: inline-block'>{r}</span>")
 
             # Atualiza o cursor
             janela.chat_tela.setTextCursor(cursor)
@@ -110,6 +108,12 @@ class MinhaJanela(QWidget):
             else:
                 self.chat_botao.hide()
 
+        #trabalhar aqui. Carregamento do arquivo e administração dos dados
+        def carregar_arquivo() -> None:
+            nome, dados = funcs.carregar_arquivo()
+            if nome and dados:
+                self.arquivo_carregado.setText(nome)
+
         # Tela principal
         self.chat_tela = QTextEdit()
         self.chat_tela.setReadOnly(True)
@@ -117,24 +121,27 @@ class MinhaJanela(QWidget):
         self.chat_tela.setMaximumHeight(700)
         self.chat_tela.setAlignment(Qt.AlignmentFlag.AlignLeft)
 
+        #união da barra para escrever o prompt com o botão de enviar o prompt
         self.prompt_barra = QHBoxLayout()
+        #parte para escrever
         self.chat_prompt = QTextEdit()
         self.chat_prompt.setMaximumHeight(40)
         self.chat_prompt.setMinimumWidth(1000)
         self.chat_prompt.setMaximumWidth(1600)
         self.chat_prompt.setFont(QFont("Arial", 15))
         self.chat_prompt.textChanged.connect(esconder_mostrar_botao)
-
+        #botão para enviar
         self.chat_botao = QPushButton()
         self.chat_botao.setIcon(QIcon(f"{os.getcwd()}\\ícones\\seta_enviar.jpg"))
         self.chat_botao.setMinimumHeight(20)
         self.chat_botao.setMaximumHeight(40)
         self.chat_botao.clicked.connect(animacao_botao)
         self.chat_botao.setVisible(False)
-
+        #parte que junta
         self.prompt_barra.addWidget(self.chat_prompt, alignment=Qt.AlignmentFlag.AlignLeft, stretch=2)
         self.prompt_barra.addWidget(self.chat_botao, alignment=Qt.AlignmentFlag.AlignLeft, stretch=1)
 
+        #barra para escolher o modelo
         self.botao_modelo = QComboBox()
         for modelo in funcs.listar_modelos():
             self.botao_modelo.addItem(modelo)
@@ -145,13 +152,13 @@ class MinhaJanela(QWidget):
         self.botao_modelo.setMinimumHeight(20)
         self.botao_modelo.setMaximumHeight(40)
 
+        #botão para carregar arquivo
         self.botao_arquivo = QPushButton("Carregar Arquivo")
         self.botao_arquivo.setMaximumWidth(200)
         self.botao_arquivo.setMinimumWidth(100)
         self.botao_arquivo.setMinimumHeight(20)
         self.botao_arquivo.setMaximumHeight(40)
-        self.botao_arquivo.clicked.connect(funcs.carregar_arquivo)
-
+        self.botao_arquivo.clicked.connect(carregar_arquivo)
         #mostrador de arquivo carregado
         self.arquivo_carregado = QTextEdit()
         self.arquivo_carregado.setReadOnly(True)
