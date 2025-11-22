@@ -1,5 +1,6 @@
 import sys
 import os
+import html
 import funcs
 import traceback
 from PyQt6.QtCore import QPropertyAnimation, QEasingCurve, QRect
@@ -15,25 +16,40 @@ class PromptThread(QThread):
     def __init__(self, modelo, prompt):
         super().__init__()
         funcs.iniciar() # -> verifica a integridade dos diretórios
+        self.thread = None
+        self.thread_running = False
         self.modelo = modelo
         self.prompt = prompt
 
     def run(self):
+        self.thread_running = True
         i = 0
         try:
             for linha in funcs.fazer_prompt(self.modelo, self.prompt):
                 i += 1
+                if not self.thread_running:
+                    break  # para o loop imediatamente
                 if i == 105:
-                    self.linha.emit(str("<br><br>"))
+                    self.linha.emit(str("<br>"))
                     i = 0
                 self.linha.emit(str(linha)) #-> emite sinal para printar na tela
         except Exception:
             self.erro.emit(traceback.format_exc())
+        finally:
+            self.linha.emit(str("<br><br>"))
+            self.thread_running = False
+            print(self.thread_running)
+
+
+    def stop(self):
+        self.thread_running = False  # chamada externa para cancelar
 
 # Criamos uma classe que "É UMA" janela (herda de QWidget)
 class MinhaJanela(QWidget):
     def __init__(self):
         super().__init__()  # Inicializa o QWidget padrão
+        self.orig_dir = os.getcwd()
+        self.thread = None
 
         # Configurações iniciais da janela
         self.setWindowTitle("PyChatBot")
@@ -49,10 +65,11 @@ class MinhaJanela(QWidget):
             cursor = janela.chat_tela.textCursor()
             cursor.movePosition(QTextCursor.MoveOperation.End)
 
+            r_escaped = html.escape(r)
             # Insere texto com estilo sem quebrar linha
             r = r.replace(" ", "&nbsp;") # <- para adicionar os espaços
             cursor.insertHtml(
-                f"<span style='font-family: Arial; font-size: 12pt; color: black; font-weight: bold'>{r}</span>")
+                f"<span style='font-family: Arial; font-size: 12pt; color: black'>{r}</span>")
 
             # Atualiza o cursor
             janela.chat_tela.setTextCursor(cursor)
@@ -74,10 +91,16 @@ class MinhaJanela(QWidget):
             click_botao_prompt()
 
         def click_botao_prompt() -> None:
-            self.thread = PromptThread(self.botao_modelo.currentText(), self.chat_prompt.toPlainText())
-            self.thread.linha.connect(adicionar_html)
-            self.thread.erro.connect(lambda e: self.chat_tela.append(f"Erro:\n{e}"))
-            self.thread.start()
+            if self.thread is None or not self.thread.thread_running:
+                self.thread = PromptThread(self.botao_modelo.currentText(), self.chat_prompt.toPlainText())
+                self.thread.linha.connect(adicionar_html)
+                self.thread.erro.connect(lambda e: self.chat_tela.append(f"Erro:\n{e}"))
+                self.thread.start()
+            else:
+                if self.thread:
+                    self.thread.stop()
+                self.chat_botao.setIcon(QIcon(f"{self.orig_dir}\\ícones\\seta_enviar.jpg"))
+                self.chat_tela.append("<i>Operação cancelada pelo usuário.</i>")
 
         #funções para atividades dinâmicas
         def esconder_mostrar_botao() -> None:
@@ -86,6 +109,7 @@ class MinhaJanela(QWidget):
                 self.chat_botao.show()
             else:
                 self.chat_botao.hide()
+
         # Tela principal
         self.chat_tela = QTextEdit()
         self.chat_tela.setReadOnly(True)
@@ -178,4 +202,3 @@ if __name__ == "__main__":
     janela = MinhaJanela()
     janela.show()
     sys.exit(app.exec())
-    
