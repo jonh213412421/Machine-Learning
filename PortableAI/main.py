@@ -1,211 +1,341 @@
 import sys
 import os
-import html
 import funcs
 import traceback
-from PyQt6.QtCore import QPropertyAnimation, QEasingCurve, QRect
 from PyQt6.QtGui import QIcon, QFont, QTextCursor, QTextCharFormat, QColor
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtWidgets import QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QComboBox, QTextEdit, QFrame
+from PyQt6.QtWidgets import QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QComboBox, QTextEdit, \
+   QFrame, QSlider, QLineEdit
+
+
+
 
 # thread para rodar o modelo
 class PromptThread(QThread):
-    linha = pyqtSignal(str)  # emitida a cada linha
-    erro = pyqtSignal(str)   # emitida em caso de exceção
+   linha = pyqtSignal(str)  # emitida a cada linha
+   erro = pyqtSignal(str)   # emitida em caso de exceção
 
-    def __init__(self, modelo, prompt):
-        super().__init__()
-        funcs.iniciar() # -> verifica a integridade dos diretórios
-        self.thread = None
-        self.thread_running = False
-        self.modelo = modelo
-        self.prompt = prompt
 
-    def run(self):
-        self.thread_running = True
-        i = 0
-        try:
-            for linha in funcs.fazer_prompt(self.modelo, self.prompt):
-                i += 1
-                if not self.thread_running:
-                    break  # para o loop imediatamente
-                if i == 105:
-                    self.linha.emit(str("<br>"))
-                    i = 0
-                self.linha.emit(str(linha)) #-> emite sinal para printar na tela
-        except Exception:
-            self.erro.emit(traceback.format_exc())
-        finally:
-            self.linha.emit(str("<br><br>"))
-            self.thread_running = False
-            print(self.thread_running)
+   def __init__(self, modelo, prompt):
+       super().__init__()
+       funcs.iniciar() # -> verifica a integridade dos diretórios
+       self.thread = None
+       self.thread_running = False
+       self.modelo = modelo
+       self.prompt = prompt
 
-    def stop(self):
-        self.thread_running = False  # chamada externa para cancelar
+
+   def run(self):
+       self.thread_running = True
+       try:
+           for linha in funcs.fazer_prompt(self.modelo, self.prompt):
+               print(str(linha))
+               if not self.thread_running:
+                   break  # para o loop imediatamente
+               self.linha.emit(str(linha)) #-> emite sinal para printar na tela
+               if linha == "":
+                   break
+
+
+       except Exception:
+           self.erro.emit(traceback.format_exc())
+       finally:
+           self.thread_running = False
+
+
+   def stop(self):
+       self.thread_running = False  # chamada externa para cancelar
+
 
 # Criamos uma classe que "É UMA" janela (herda de QWidget)
 class MinhaJanela(QWidget):
-    def __init__(self):
-        super().__init__()  # Inicializa o QWidget padrão
-        self.orig_dir = os.getcwd()
-        self.thread = None
+   def __init__(self):
+       super().__init__()  # Inicializa o QWidget padrão
+       self.orig_dir = os.getcwd()
+       self.thread = None
 
-        # Configurações iniciais da janela
-        self.setWindowTitle("PyChatBot")
-        self.resize(1024, 800)
 
-        # Chama a função que cria os botões e textos
-        self.setup_ui()
+       # Configurações iniciais da janela
+       self.setWindowTitle("PyChatBot")
+       self.resize(1024, 800)
 
-    def setup_ui(self):
 
-        def adicionar_html(r) -> None:
-            # Move o cursor para o final
-            cursor = janela.chat_tela.textCursor()
-            cursor.movePosition(QTextCursor.MoveOperation.End)
+       # Chama a função que cria os botões e textos
+       self.setup_ui()
 
-            r_escaped = html.escape(r)
-            # Insere texto com estilo sem quebrar linha
-            r = r.replace(" ", "&nbsp;") # <- para adicionar os espaços
-            cursor.insertHtml(f"<span style='font-family: Arial; font-size: 12pt; color: black; margin-bottom: 25px; display: inline-block'>{r}</span>")
 
-            # Atualiza o cursor
-            janela.chat_tela.setTextCursor(cursor)
+   def setup_ui(self):
 
-        def animacao_botao() -> None:
-            # Animar botão (encolher e expandir)
-            rect = self.chat_botao.geometry()
-            self.chat_botao.setIcon(QIcon())
-            anim = QPropertyAnimation(self.chat_botao, b"geometry")
-            anim.setDuration(150)  # 150ms
-            anim.setStartValue(rect)
-            anim.setKeyValueAt(0.5, QRect(rect.x() + 3, rect.y() + 3, rect.width() - 6, rect.height() - 6))
-            anim.setEndValue(rect)
-            anim.setEasingCurve(QEasingCurve.Type.OutQuad)
-            anim.start()
-            self.button_animation = anim  # manter referência
 
-            # Chamar função original
-            click_botao_prompt()
+       def adicionar_html(r) -> None:
+           cursor = janela.chat_tela.textCursor()
+           cursor.movePosition(QTextCursor.MoveOperation.End)
 
-        def click_botao_prompt() -> None:
-            if self.thread is None or not self.thread.thread_running:
-                self.thread = PromptThread(self.botao_modelo.currentText(), self.chat_prompt.toPlainText())
-                self.thread.linha.connect(adicionar_html)
-                self.thread.erro.connect(lambda e: self.chat_tela.append(f"Erro:\n{e}"))
-                self.thread.start()
-            else:
-                if self.thread:
-                    self.thread.stop()
-                self.chat_botao.setIcon(QIcon(f"{self.orig_dir}\\ícones\\seta_enviar.jpg"))
-                self.chat_tela.append("<i>Operação cancelada pelo usuário.</i>")
 
-        #funções para atividades dinâmicas
-        def esconder_mostrar_botao() -> None:
-            text = self.chat_prompt.toPlainText().strip()
-            if text:
-                self.chat_botao.show()
-            else:
-                self.chat_botao.hide()
+           # MELHORIA 1: Não use &nbsp;! Use insertPlainText para texto puro.
+           # O insertPlainText respeita espaços e quebras de linha automaticamente.
 
-        #trabalhar aqui. Carregamento do arquivo e administração dos dados
-        def carregar_arquivo() -> None:
-            nome, dados = funcs.carregar_arquivo()
-            if nome and dados:
-                self.arquivo_carregado.setText(nome)
 
-        # Tela principal
-        self.chat_tela = QTextEdit()
-        self.chat_tela.setReadOnly(True)
-        self.chat_tela.setMinimumHeight(300)
-        self.chat_tela.setMaximumHeight(700)
-        self.chat_tela.setAlignment(Qt.AlignmentFlag.AlignLeft)
+           # Se quiser cor específica, defina no formato do cursor antes de escrever
+           formato = QTextCharFormat()
+           formato.setFont(QFont("Arial", 12))
+           formato.setForeground(QColor("black"))
+           cursor.setCharFormat(formato)
 
-        #união da barra para escrever o prompt com o botão de enviar o prompt
-        self.prompt_barra = QHBoxLayout()
-        #parte para escrever
-        self.chat_prompt = QTextEdit()
-        self.chat_prompt.setMaximumHeight(40)
-        self.chat_prompt.setMinimumWidth(1000)
-        self.chat_prompt.setMaximumWidth(1600)
-        self.chat_prompt.setFont(QFont("Arial", 15))
-        self.chat_prompt.textChanged.connect(esconder_mostrar_botao)
-        #botão para enviar
-        self.chat_botao = QPushButton()
-        self.chat_botao.setIcon(QIcon(f"{os.getcwd()}\\ícones\\seta_enviar.jpg"))
-        self.chat_botao.setMinimumHeight(20)
-        self.chat_botao.setMaximumHeight(40)
-        self.chat_botao.clicked.connect(animacao_botao)
-        self.chat_botao.setVisible(False)
-        #parte que junta
-        self.prompt_barra.addWidget(self.chat_prompt, alignment=Qt.AlignmentFlag.AlignLeft, stretch=2)
-        self.prompt_barra.addWidget(self.chat_botao, alignment=Qt.AlignmentFlag.AlignLeft, stretch=1)
 
-        #barra para escolher o modelo
-        self.botao_modelo = QComboBox()
-        for modelo in funcs.listar_modelos():
-            self.botao_modelo.addItem(modelo)
-        self.botao_modelo.addItem("Adicionar modelo")
-        self.botao_modelo.currentIndexChanged.connect( lambda index: funcs.selecionar_modelo(self.botao_modelo.currentText()))
-        self.botao_modelo.setMaximumWidth(600)
-        self.botao_modelo.setMinimumWidth(250)
-        self.botao_modelo.setMinimumHeight(20)
-        self.botao_modelo.setMaximumHeight(40)
+           cursor.insertText(r)  # Usa insertText em vez de insertHtml para evitar bugs de tags quebradas
 
-        #botão para carregar arquivo
-        self.botao_arquivo = QPushButton("Carregar Arquivo")
-        self.botao_arquivo.setMaximumWidth(200)
-        self.botao_arquivo.setMinimumWidth(100)
-        self.botao_arquivo.setMinimumHeight(20)
-        self.botao_arquivo.setMaximumHeight(40)
-        self.botao_arquivo.clicked.connect(carregar_arquivo)
-        #mostrador de arquivo carregado
-        self.arquivo_carregado = QTextEdit()
-        self.arquivo_carregado.setReadOnly(True)
-        self.arquivo_carregado.setAlignment(Qt.AlignmentFlag.AlignRight)
-        self.arquivo_carregado.setPlaceholderText("Nenhum arquivo carregado")
-        self.arquivo_carregado.setMaximumWidth(200)
-        self.arquivo_carregado.setMinimumWidth(100)
-        self.arquivo_carregado.setMinimumHeight(20)
-        self.arquivo_carregado.setMaximumHeight(40)
 
-        layout_inferior = QHBoxLayout()
-        layout_inferior.addWidget(self.botao_modelo)
-        layout_inferior.addWidget(self.botao_arquivo)
-        layout_inferior.addWidget(self.arquivo_carregado)
+           # Atualiza o scroll
+           janela.chat_tela.setTextCursor(cursor)
+           janela.chat_tela.ensureCursorVisible()
 
-        layout_principal_area = QVBoxLayout()
-        layout_principal_area.addWidget(self.chat_tela)
-        layout_principal_area.addLayout(self.prompt_barra)
-        layout_principal_area.addLayout(layout_inferior)
 
-        # -------------------------
-        #        SIDEBAR
-        # -------------------------
-        sidebar = QFrame()
-        sidebar.resize(0, 5)
-        sidebar.setFrameShape(QFrame.Shape.StyledPanel)
+       def click_botao_prompt() -> None:
+           def voltar_ao_inicio() -> None:
+               self.chat_botao.setIcon(QIcon(f"{self.orig_dir}\\ícones\\seta_enviar.svg"))
+               habilitar_botao_carregamento_arquivo()
+               hablitar_botao_modelo()
+           if self.thread is None or not self.thread.thread_running:
+               self.thread = PromptThread(self.botao_modelo.currentText(), self.chat_prompt.toPlainText())
+               self.thread.linha.connect(adicionar_html)
+               self.thread.erro.connect(lambda e: self.chat_tela.append(f"Erro:\n{e}"))
+               self.thread.finished.connect(voltar_ao_inicio)
+               desabilitar_botao_carregamento_arquivo()
+               desablitar_botao_modelo()
+               self.chat_botao.setIcon(QIcon(f"{self.orig_dir}\\ícones\\trabalhando.svg"))
+               self.thread.start()
+           else:
+               if self.thread:
+                   self.thread.stop()
+               self.chat_botao.setIcon(QIcon(f"{self.orig_dir}\\ícones\\seta_enviar.svg"))
+               habilitar_botao_carregamento_arquivo()
+               hablitar_botao_modelo()
+               self.chat_tela.append("<i>Operação cancelada pelo usuário.</i><br><br>")
 
-        layout_sidebar = QVBoxLayout(sidebar)
-        layout_sidebar.addWidget(QLabel("Menu"))
-        layout_sidebar.addWidget(QPushButton("Opção 1"))
-        layout_sidebar.addWidget(QPushButton("Opção 2"))
-        layout_sidebar.addWidget(QPushButton("Opção 3"))
-        layout_sidebar.addStretch()
 
-        # -------------------------
-        #  LAYOUT GERAL (horizontal)
-        # -------------------------
-        layout_geral = QHBoxLayout()
-        layout_geral.addWidget(sidebar)              # ← barra lateral
-        layout_geral.addLayout(layout_principal_area)  # ← sua área principal
+       #funções para atividades dinâmicas
+       def esconder_mostrar_botao() -> None:
+           text = self.chat_prompt.toPlainText().strip()
+           if text:
+               self.chat_botao.show()
+           else:
+               self.chat_botao.hide()
 
-        self.setLayout(layout_geral)
+
+       #desabilita o carregamento de arquivos. Necessário fazer enquanto o programa trabalha.
+       def desabilitar_botao_carregamento_arquivo() -> None:
+           self.botao_arquivo.setDisabled(True)
+
+
+       #habilita o carregamento de arquivos novamente
+       def habilitar_botao_carregamento_arquivo() -> None:
+           self.botao_arquivo.setDisabled(False)
+
+
+       def desablitar_botao_modelo() -> None:
+           self.botao_modelo.setDisabled(True)
+
+
+       def hablitar_botao_modelo() -> None:
+           self.botao_modelo.setDisabled(False)
+
+
+       #trabalhar aqui. Carregamento do arquivo e administração dos dados
+       def carregar_arquivo() -> None:
+           nome, dados = funcs.carregar_arquivo()
+           if nome and dados:
+               self.arquivo_carregado.setText(nome)
+
+
+       # Tela principal
+       self.chat_tela = QTextEdit()
+       self.chat_tela.setReadOnly(True)
+       self.chat_tela.setMinimumHeight(300)
+       self.chat_tela.setMaximumHeight(700)
+       self.chat_tela.setAlignment(Qt.AlignmentFlag.AlignLeft)
+
+
+       #união da barra para escrever o prompt com o botão de enviar o prompt
+       self.prompt_barra = QHBoxLayout()
+       #parte para escrever
+       self.chat_prompt = QTextEdit()
+       self.chat_prompt.setMaximumHeight(40)
+       self.chat_prompt.setMinimumWidth(1000)
+       self.chat_prompt.setMaximumWidth(1600)
+       self.chat_prompt.setFont(QFont("Arial", 15))
+       self.chat_prompt.textChanged.connect(esconder_mostrar_botao)
+       #botão para enviar
+       self.chat_botao = QPushButton()
+       self.chat_botao.setIcon(QIcon(f"{os.getcwd()}\\ícones\\seta_enviar.svg"))
+       #tira a margem
+       self.chat_botao.setStyleSheet("margin: 0px; border: none;")
+       self.chat_botao.setMinimumWidth(50)
+       self.chat_botao.setMinimumHeight(20)
+       self.chat_botao.setMaximumHeight(40)
+       # dá estilo para a seta
+       self.chat_botao.setStyleSheet("""
+           QPushButton {
+               background-color: rgb(245, 245, 245);     /* mais claro */
+               border: none;
+               border-radius: 20px;
+               margin: 0px;
+               padding: 0px;
+           }
+           QPushButton:pressed {
+               background-color: rgb(230, 230, 230);     /* mais escuro ao pressionar */
+           }
+           QPushButton:hover {
+               background-color: rgb(230, 230, 230);     /* mais escuro ao pressionar */
+           }
+       """)
+       self.chat_botao.clicked.connect(click_botao_prompt)
+       self.chat_botao.setVisible(False)
+       #parte que junta
+       self.prompt_barra.addWidget(self.chat_prompt, alignment=Qt.AlignmentFlag.AlignLeft, stretch=2)
+       self.prompt_barra.addWidget(self.chat_botao, alignment=Qt.AlignmentFlag.AlignLeft, stretch=1)
+
+
+       #barra para escolher o modelo
+       self.botao_modelo = QComboBox()
+       for modelo in funcs.listar_modelos():
+           self.botao_modelo.addItem(modelo)
+       self.botao_modelo.addItem("Adicionar modelo")
+       self.botao_modelo.currentIndexChanged.connect( lambda index: funcs.selecionar_modelo(self.botao_modelo.currentText()))
+       self.botao_modelo.setMaximumWidth(600)
+       self.botao_modelo.setMinimumWidth(250)
+       self.botao_modelo.setMinimumHeight(20)
+       self.botao_modelo.setMaximumHeight(40)
+
+
+       #botão para carregar arquivo
+       self.botao_arquivo = QPushButton("Carregar Arquivo")
+       self.botao_arquivo.setMaximumWidth(200)
+       self.botao_arquivo.setMinimumWidth(100)
+       self.botao_arquivo.setMinimumHeight(20)
+       self.botao_arquivo.setMaximumHeight(40)
+       #dá estilo ao botão de arquivo carregado
+       self.botao_arquivo.setStyleSheet("""
+           QPushButton {
+               background-color: rgb(180, 180, 180);     /* mais claro */
+               border: none;
+               border-radius: 20px;
+               margin: 0px;
+               padding: 0px;
+           }
+           QPushButton:pressed {
+               background-color: rgb(230, 230, 230);     /* mais escuro ao pressionar */
+           }
+           QPushButton:hover {
+               background-color: rgb(150, 150, 150);     /* mais escuro ao pressionar */
+           }
+       """)
+       self.botao_arquivo.clicked.connect(carregar_arquivo)
+       #mostrador de arquivo carregado
+       self.arquivo_carregado = QTextEdit()
+       self.arquivo_carregado.setReadOnly(True)
+       self.arquivo_carregado.setAlignment(Qt.AlignmentFlag.AlignRight)
+       self.arquivo_carregado.setPlaceholderText("Nenhum arquivo carregado")
+       self.arquivo_carregado.setMaximumWidth(200)
+       self.arquivo_carregado.setMinimumWidth(100)
+       self.arquivo_carregado.setMinimumHeight(20)
+       self.arquivo_carregado.setMaximumHeight(40)
+
+
+       layout_inferior = QHBoxLayout()
+       layout_inferior.addWidget(self.botao_modelo)
+       layout_inferior.addWidget(self.botao_arquivo)
+       layout_inferior.addWidget(self.arquivo_carregado)
+
+
+       layout_principal_area = QVBoxLayout()
+       layout_principal_area.addWidget(self.chat_tela)
+       layout_principal_area.addLayout(self.prompt_barra)
+       layout_principal_area.addLayout(layout_inferior)
+
+
+       #sidebar
+       sidebar = QFrame()
+       sidebar.resize(0, 5)
+       sidebar.setMaximumWidth(200)
+       sidebar.setFrameShape(QFrame.Shape.StyledPanel)
+       sidebar.setStyleSheet("""
+           QFrame {
+               background: qlineargradient(
+                   x1: 0, y1: 0,      /* Start point: Top-Left */
+                   x2: 0, y2: 1,      /* End point: Bottom-Left (Vertical) */
+                   stop: 0 #E1F5FE,   /* Lightest Blue */
+                   stop: 1 #81D4FA    /* Slightly deeper Blue */
+       );      /* Cinza bem escuro */
+               border-right: 1px solid #333;    /* Linha separadora sutil */
+           }
+       """)
+
+
+       menu = QLabel("Menu")
+       menu.setStyleSheet("""
+           QLabel {
+               color: black;              /* Texto cinza claro */
+               font-weight: bold;           /* Negrito */
+               font-size: 12px;             /* Tamanho pequeno mas legível */
+               letter-spacing: 2px;         /* Espaçamento entre letras (Estilo chique) */
+               background: transparent;
+               border-bottom: 1px solid #333; /* Linha abaixo do texto */
+               padding-bottom: 5px;
+           }
+       """)
+       layout_sidebar = QVBoxLayout(sidebar)
+       layout_sidebar.addWidget(menu)
+
+
+       # slider superior
+       quantidade_tokens_arquivo = QVBoxLayout()
+       titulo_quantidade_tokens_arquivo = QLabel("Quantidade de tokens")
+       titulo_quantidade_tokens_arquivo.setMaximumHeight(20)
+       slider_quantidade_tokens_arquivo = QSlider(Qt.Orientation.Horizontal)
+       slider_quantidade_tokens_arquivo.setMinimum(2000)  # valor mínimo
+       slider_quantidade_tokens_arquivo.setMaximum(64000)  # valor máximo
+       slider_quantidade_tokens_arquivo.setValue(10000)  # valor inicial opcional
+       mostrador_quantidade_tokens_arquivo = QTextEdit()
+       mostrador_quantidade_tokens_arquivo.setReadOnly(True)
+       mostrador_quantidade_tokens_arquivo.setMaximumHeight(22)
+       mostrador_quantidade_tokens_arquivo.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+       mostrador_quantidade_tokens_arquivo.setText(str(slider_quantidade_tokens_arquivo.value()))
+       def atualizar_valor_slider(valor):
+           mostrador_quantidade_tokens_arquivo.setText(f"{valor}")
+       slider_quantidade_tokens_arquivo.valueChanged.connect(lambda valor: atualizar_valor_slider(valor))
+
+
+       quantidade_tokens_arquivo.addWidget(titulo_quantidade_tokens_arquivo)
+       quantidade_tokens_arquivo.addWidget(slider_quantidade_tokens_arquivo)
+       quantidade_tokens_arquivo.addWidget(mostrador_quantidade_tokens_arquivo)
+
+
+       layout_sidebar.addLayout(quantidade_tokens_arquivo)
+       layout_sidebar.addWidget(QPushButton("Opção 2"))
+       layout_sidebar.addWidget(QPushButton("Opção 3"))
+       layout_sidebar.addStretch()
+
+
+       # -------------------------
+       #  LAYOUT GERAL (horizontal)
+       # -------------------------
+       layout_geral = QHBoxLayout()
+       layout_geral.addWidget(sidebar)              # ← barra lateral
+       layout_geral.addLayout(layout_principal_area)  # ← sua área principal
+
+
+       self.setLayout(layout_geral)
+
+
 
 
 # Bloco de execução padrão
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    janela = MinhaJanela()
-    janela.show()
-    sys.exit(app.exec())
+   app = QApplication(sys.argv)
+   janela = MinhaJanela()
+   janela.show()
+   sys.exit(app.exec())
+
+
+
