@@ -79,31 +79,25 @@ def fazer_prompt(modelo: str, prompt: str) -> str:
 
 
    try:
-       resposta = subprocess.Popen(
+       with subprocess.Popen(
            cmd,
-           stdin=subprocess.DEVNULL, #-> RETORNA NULO PARA QUALQUER INPUT SOLICITADO DO USUÁRIO
+           stdin=subprocess.DEVNULL,
            stdout=subprocess.PIPE,
            stderr=subprocess.STDOUT,
            shell=True,
            text=True,
-           encoding="utf-8"
-       )
+           encoding="utf-8",
+           bufsize=1
+       ) as proc:
+           for linha in proc.stdout:
+               yield linha  # envia linha por linha
+       proc.wait()
 
 
-       while True:
-           char = resposta.stdout.read(1)
-
-
-           sys.stdout.write(char)
-           sys.stdout.flush()
-           yield char
-
-
-       resposta.stdout.close()
-       resposta.wait()
    except Exception as e:
-       print(f"Erro ao executar o modelo: {e}")
-       return "Erro!"
+       yield f"\nErro ao executar o modelo: {e}\n"
+
+
    finally:
        os.chdir(dir_inicial)
 
@@ -132,6 +126,4 @@ extrair_palavras_chave("quem foi napoleão bonaparte?")
 #modelo = os.path.basename(modelo)
 #prompt = "você fala português?"
 #fazer_prompt(modelo, prompt)
-
-
 
