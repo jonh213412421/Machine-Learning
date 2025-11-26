@@ -2,13 +2,12 @@ import sys
 import os
 import funcs
 import traceback
+from PyQt6.QtGui import QShortcut, QKeySequence
+from PyQt6.QtCore import QPropertyAnimation, QEasingCurve
 from PyQt6.QtGui import QIcon, QFont, QTextCursor, QTextCharFormat, QColor
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QComboBox, QTextEdit, \
-   QFrame, QSlider, QLineEdit
-
-
-
+   QFrame, QSlider, QTextBrowser
 
 # thread para rodar o modelo
 class PromptThread(QThread):
@@ -27,14 +26,22 @@ class PromptThread(QThread):
 
    def run(self):
        self.thread_running = True
+       i = 0
        try:
+           # coloca o prompt na primeira linha
+           self.linha.emit(f"<div style='text-align: right;'><span style='color: #222222; font-family: Segoe UI; font-size: 18px;'>{self.prompt}</span></div><br>")
            for linha in funcs.fazer_prompt(self.modelo, self.prompt):
-               print(str(linha))
                if not self.thread_running:
                    break  # para o loop imediatamente
-               self.linha.emit(str(linha)) #-> emite sinal para printar na tela
                if linha == "":
-                   break
+                   i += 1
+                   if i > 5:
+                       break
+               else:
+                   self.linha.emit(f"<span style='color: #222222; font-family: Segoe UI; font-size: 18px;'>{linha}</span>")  # -> emite sinal para printar na tela
+                   i -= 1
+                   if i < 0:
+                       i = 0
 
 
        except Exception:
@@ -53,11 +60,10 @@ class MinhaJanela(QWidget):
        super().__init__()  # Inicializa o QWidget padrão
        self.orig_dir = os.getcwd()
        self.thread = None
-
-
+       self.sidebar_estendida = True
        # Configurações iniciais da janela
        self.setWindowTitle("PyChatBot")
-       self.resize(1024, 800)
+       self.setFixedSize(1024, 800)
 
 
        # Chama a função que cria os botões e textos
@@ -67,13 +73,9 @@ class MinhaJanela(QWidget):
    def setup_ui(self):
 
 
-       def adicionar_html(r) -> None:
+       def adicionar_html(texto) -> None:
            cursor = janela.chat_tela.textCursor()
            cursor.movePosition(QTextCursor.MoveOperation.End)
-
-
-           # MELHORIA 1: Não use &nbsp;! Use insertPlainText para texto puro.
-           # O insertPlainText respeita espaços e quebras de linha automaticamente.
 
 
            # Se quiser cor específica, defina no formato do cursor antes de escrever
@@ -83,7 +85,7 @@ class MinhaJanela(QWidget):
            cursor.setCharFormat(formato)
 
 
-           cursor.insertText(r)  # Usa insertText em vez de insertHtml para evitar bugs de tags quebradas
+           cursor.insertHtml(texto)  # Usa insertText em vez de insertHtml para evitar bugs de tags quebradas
 
 
            # Atualiza o scroll
@@ -92,10 +94,12 @@ class MinhaJanela(QWidget):
 
 
        def click_botao_prompt() -> None:
+           # se for executado enquanto o programa está rodando, ele volta ao estado inicial
            def voltar_ao_inicio() -> None:
                self.chat_botao.setIcon(QIcon(f"{self.orig_dir}\\ícones\\seta_enviar.svg"))
                habilitar_botao_carregamento_arquivo()
                hablitar_botao_modelo()
+           # se não tiver rodado ainda, começa a thread
            if self.thread is None or not self.thread.thread_running:
                self.thread = PromptThread(self.botao_modelo.currentText(), self.chat_prompt.toPlainText())
                self.thread.linha.connect(adicionar_html)
@@ -146,10 +150,47 @@ class MinhaJanela(QWidget):
            nome, dados = funcs.carregar_arquivo()
            if nome and dados:
                self.arquivo_carregado.setText(nome)
+           else:
+               self.arquivo_carregado.setText("")
+
+
+       def minimizar_sidebar():
+           width_atual = sidebar.width()
+           width_fechada = 0
+           width_aberta = 200
+
+
+           if self.sidebar_estendida == True:
+               destino = width_fechada
+               self.sidebar_estendida = False
+               maximizador_menu.setIcon(QIcon(f"{self.orig_dir}\\ícones\\expansão_menu.svg"))
+           else:
+               destino = width_aberta
+               self.sidebar_estendida = True
+               maximizador_menu.setIcon(QIcon(f"{self.orig_dir}\\ícones\\minimização_menu.svg"))
+
+
+           # Cria animação
+           self.animacao = QPropertyAnimation(sidebar, b"maximumWidth")
+           self.animacao.setDuration(300)
+           self.animacao.setStartValue(width_atual)
+           self.animacao.setEndValue(destino)
+           self.animacao.setEasingCurve(QEasingCurve.Type.InOutCubic)
+           self.animacao.start()
 
 
        # Tela principal
-       self.chat_tela = QTextEdit()
+       self.chat_tela = QTextBrowser()
+       #tem que passar a estilização em tempo real
+       self.chat_tela.setStyleSheet("""
+           QTextBrowser {
+               background-color: #DEE6EE;  /* fundo cinza claro */
+               color: #222222;             /* cor do texto */
+               border: 1px solid #ccc;     /* borda leve */
+               border-radius: 8px;         /* cantos arredondados */
+               padding: 8px;               /* espaçamento interno */
+           }
+       """)
        self.chat_tela.setReadOnly(True)
        self.chat_tela.setMinimumHeight(300)
        self.chat_tela.setMaximumHeight(700)
@@ -161,9 +202,8 @@ class MinhaJanela(QWidget):
        #parte para escrever
        self.chat_prompt = QTextEdit()
        self.chat_prompt.setMaximumHeight(40)
-       self.chat_prompt.setMinimumWidth(1000)
-       self.chat_prompt.setMaximumWidth(1600)
-       self.chat_prompt.setFont(QFont("Arial", 15))
+       self.chat_prompt.setMinimumWidth(900)
+       self.chat_prompt.setFont(QFont("Arial", 12))
        self.chat_prompt.textChanged.connect(esconder_mostrar_botao)
        #botão para enviar
        self.chat_botao = QPushButton()
@@ -225,6 +265,8 @@ class MinhaJanela(QWidget):
            }
            QPushButton:pressed {
                background-color: rgb(230, 230, 230);     /* mais escuro ao pressionar */
+                   padding-top: 2px;                       /* Faz o botão parecer afundar */
+                   padding-bottom: -2px;
            }
            QPushButton:hover {
                background-color: rgb(150, 150, 150);     /* mais escuro ao pressionar */
@@ -234,8 +276,14 @@ class MinhaJanela(QWidget):
        #mostrador de arquivo carregado
        self.arquivo_carregado = QTextEdit()
        self.arquivo_carregado.setReadOnly(True)
-       self.arquivo_carregado.setAlignment(Qt.AlignmentFlag.AlignRight)
+       self.arquivo_carregado.setAlignment(Qt.AlignmentFlag.AlignCenter)
        self.arquivo_carregado.setPlaceholderText("Nenhum arquivo carregado")
+       self.arquivo_carregado.setStyleSheet("""
+           QTextEdit {
+               background-color: #DEE6EE; 
+               border: none;
+               padding: 0px;
+           }""")
        self.arquivo_carregado.setMaximumWidth(200)
        self.arquivo_carregado.setMinimumWidth(100)
        self.arquivo_carregado.setMinimumHeight(20)
@@ -262,18 +310,39 @@ class MinhaJanela(QWidget):
        sidebar.setStyleSheet("""
            QFrame {
                background: qlineargradient(
-                   x1: 0, y1: 0,      /* Start point: Top-Left */
-                   x2: 0, y2: 1,      /* End point: Bottom-Left (Vertical) */
-                   stop: 0 #E1F5FE,   /* Lightest Blue */
-                   stop: 1 #81D4FA    /* Slightly deeper Blue */
+               x1: 0, y1: 0,
+               x2: 0, y2: 1,
+               stop: 0 #EFF3F8,   /* Cinza muito claro com um toque frio de azul no topo */
+               stop: 1 #DEE6EE    /* Um azul-acinzentado ligeiramente mais profundo na base */
        );      /* Cinza bem escuro */
                border-right: 1px solid #333;    /* Linha separadora sutil */
            }
        """)
 
 
+       botao_minimizar_menu = QPushButton("Minimizar")
+       botao_minimizar_menu.clicked.connect(minimizar_sidebar)
        menu = QLabel("Menu")
        menu.setStyleSheet("""
+           QLabel {
+               color: black;              /* Texto cinza claro */
+               font-weight: bold;           /* Negrito */
+               font-size: 16px;             /* Tamanho pequeno mas legível */
+               letter-spacing: 2px;         /* Espaçamento entre letras (Estilo chique) */
+               background: transparent;
+               border-bottom: 1px solid #333; /* Linha abaixo do texto */
+               padding-bottom: 5px;
+           }
+       """)
+       layout_sidebar = QVBoxLayout(sidebar)
+       layout_sidebar.addWidget(menu)
+       layout_sidebar.addSpacing(15)
+
+
+       # slider superior
+       quantidade_tokens_arquivo = QVBoxLayout()
+       titulo_quantidade_tokens_arquivo = QLabel("Quantidade de tokens")
+       titulo_quantidade_tokens_arquivo.setStyleSheet("""
            QLabel {
                color: black;              /* Texto cinza claro */
                font-weight: bold;           /* Negrito */
@@ -284,13 +353,6 @@ class MinhaJanela(QWidget):
                padding-bottom: 5px;
            }
        """)
-       layout_sidebar = QVBoxLayout(sidebar)
-       layout_sidebar.addWidget(menu)
-
-
-       # slider superior
-       quantidade_tokens_arquivo = QVBoxLayout()
-       titulo_quantidade_tokens_arquivo = QLabel("Quantidade de tokens")
        titulo_quantidade_tokens_arquivo.setMaximumHeight(20)
        slider_quantidade_tokens_arquivo = QSlider(Qt.Orientation.Horizontal)
        slider_quantidade_tokens_arquivo.setMinimum(2000)  # valor mínimo
@@ -301,33 +363,58 @@ class MinhaJanela(QWidget):
        mostrador_quantidade_tokens_arquivo.setMaximumHeight(22)
        mostrador_quantidade_tokens_arquivo.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
        mostrador_quantidade_tokens_arquivo.setText(str(slider_quantidade_tokens_arquivo.value()))
+       mostrador_quantidade_tokens_arquivo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+       mostrador_quantidade_tokens_arquivo.setStyleSheet("""
+           QTextEdit {
+               color: black;              /* Texto cinza claro */
+               font-weight: bold;           /* Negrito */
+               font-size: 12px;             /* Tamanho pequeno mas legível */
+               letter-spacing: 2px;         /* Espaçamento entre letras (Estilo chique) */
+               background: transparent;
+               border: none;
+           }
+       """)
+       #mecanismo para atualizar valores
        def atualizar_valor_slider(valor):
            mostrador_quantidade_tokens_arquivo.setText(f"{valor}")
+           mostrador_quantidade_tokens_arquivo.setAlignment(Qt.AlignmentFlag.AlignCenter)
        slider_quantidade_tokens_arquivo.valueChanged.connect(lambda valor: atualizar_valor_slider(valor))
-
-
        quantidade_tokens_arquivo.addWidget(titulo_quantidade_tokens_arquivo)
        quantidade_tokens_arquivo.addWidget(slider_quantidade_tokens_arquivo)
        quantidade_tokens_arquivo.addWidget(mostrador_quantidade_tokens_arquivo)
-
-
        layout_sidebar.addLayout(quantidade_tokens_arquivo)
+       layout_sidebar.addSpacing(15)
+       #trabalhar aqui
+       caixa_de_historico = QVBoxLayout()
+
+
        layout_sidebar.addWidget(QPushButton("Opção 2"))
        layout_sidebar.addWidget(QPushButton("Opção 3"))
        layout_sidebar.addStretch()
 
 
-       # -------------------------
+       maximizador_menu = QPushButton()
+       #começa minimizada
+       minimizar_sidebar()
+       maximizador_menu.setIcon(QIcon(f"{self.orig_dir}\\ícones\\expansão_menu.svg"))
+       maximizador_menu.clicked.connect(minimizar_sidebar)
+
+
        #  LAYOUT GERAL (horizontal)
-       # -------------------------
        layout_geral = QHBoxLayout()
+       layout_geral.addWidget(maximizador_menu)
+       layout_geral.setAlignment(maximizador_menu, Qt.AlignmentFlag.AlignTop)
        layout_geral.addWidget(sidebar)              # ← barra lateral
        layout_geral.addLayout(layout_principal_area)  # ← sua área principal
 
 
        self.setLayout(layout_geral)
+       self.setWindowIcon(QIcon(f"{self.orig_dir}\\ícones\\chatbot.svg"))
 
 
+       # atalho do enter. Melhorar!
+       atalho_enter = QShortcut(QKeySequence("Return"), self)
+       atalho_enter.activated.connect(lambda: self.chat_botao.clicked.emit())
 
 
 # Bloco de execução padrão
@@ -336,6 +423,3 @@ if __name__ == "__main__":
    janela = MinhaJanela()
    janela.show()
    sys.exit(app.exec())
-
-
-
