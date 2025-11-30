@@ -104,7 +104,7 @@ class MinhaJanela(QWidget):
         self.setFixedSize(1024, 800)
         self.setup_ui()
 
-    # --- Event Filter para capturar o Enter na caixa de texto ---
+    # --- EVENT FILTER: Captura o Enter DENTRO da caixa de texto ---
     def eventFilter(self, source, event):
         if event.type() == QEvent.Type.KeyPress and source is self.chat_prompt:
             if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
@@ -112,7 +112,7 @@ class MinhaJanela(QWidget):
                 if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
                     return super().eventFilter(source, event)
 
-                # Caso contrário, clica no botão (Enviar) e consome o evento (não cria linha)
+                # Caso contrário, clica no botão (Enviar) e consome o evento (impede nova linha)
                 self.chat_botao.click()
                 return True
         return super().eventFilter(source, event)
@@ -277,8 +277,15 @@ class MinhaJanela(QWidget):
         self.chat_prompt.setFont(QFont("Arial", 12))
         self.chat_prompt.textChanged.connect(esconder_mostrar_botao)
 
-        # INSTALA O FILTRO DE EVENTOS
+        # INSTALA O FILTRO DE EVENTOS (Para Enter DENTRO da caixa)
         self.chat_prompt.installEventFilter(self)
+
+        # ATALHOS GLOBAIS DE TECLADO (Para Enter FORA da caixa)
+        self.atalho_enter = QShortcut(QKeySequence("Return"), self)
+        self.atalho_enter.activated.connect(click_botao_prompt)
+
+        self.atalho_enter_num = QShortcut(QKeySequence("Enter"), self)
+        self.atalho_enter_num.activated.connect(click_botao_prompt)
 
         self.chat_botao = QPushButton()
         self.chat_botao.setIcon(QIcon(f"{os.getcwd()}\\ícones\\seta_enviar.svg"))
