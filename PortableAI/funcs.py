@@ -1,7 +1,6 @@
 import subprocess
 import os
 from tkinter import filedialog
-import sys
 import PyPDF2
 from langdetect import detect
 import spacy
@@ -10,21 +9,35 @@ import spacy
 def iniciar() -> str:
 
 
-   if not os.path.exists(os.path.join(os.getcwd(), 'Llama')) or not os.path.exists(os.path.join(os.getcwd(), 'ícones')):
-       return "Erro! Falha na integridade dos diretórios."
+   try:
+       if not os.path.exists(os.path.join(os.getcwd(), 'Llama')) or not os.path.exists(os.path.join(os.getcwd(), 'ícones')):
+           return "Erro! Falha na integridade dos diretórios. Diretório Llama não localizado"
 
 
-   if not os.path.isfile(os.path.join(os.getcwd(), 'Llama', 'llama-run.exe')):
-       return "Erro! llama-run.exe não está presente no diretório Llama."
+       if not os.path.isfile(os.path.join(os.getcwd(), 'Llama', 'llama-run.exe')):
+           return "Erro! llama-run.exe não está presente no diretório Llama."
 
 
-   if not os.path.exists(os.path.join(os.getcwd(), 'data')):
-       os.mkdir(os.path.join(os.getcwd(), 'data'))
-       return "Erro! diretório 'Data' não está presente"
+       if not os.path.exists(os.path.join(os.getcwd(), 'data')):
+           os.mkdir(os.path.join(os.getcwd(), 'data'))
+           return "Diretório 'data' criado com sucesso!"
+
+
+       if not os.path.exists(os.path.join(os.getcwd(), 'data', 'conversas')):
+           os.mkdir(os.path.join(os.getcwd(), 'data', 'conversas'))
+           return  "subdiretório 'conversas' criado com sucesso!"
+
+
+   except Exception as e:
+       return f"Erro na inicialização: {e}"
 
 
 def listar_modelos() -> str:
    return os.listdir("./Llama/Modelos")
+
+
+def listar_conversas() -> str:
+   return os.listdir("./data/conversas")
 
 
 def selecionar_modelo(opcao) -> str:
@@ -64,42 +77,6 @@ def carregar_arquivo() -> ((str, str)):
 
    except Exception as e:
        return "--", f"Erro ao carregar o arquivo: {e}"
-
-
-def fazer_prompt(modelo: str, prompt: str) -> str:
-   print("[RODANDO PROMPT]")
-
-
-   dir_inicial = os.getcwd()
-   os.chdir(os.path.join(dir_inicial, "Llama"))
-
-
-   # Comando final
-   cmd = f"llama-run.exe .\\Modelos\\{modelo} -p {prompt}'"
-
-
-   try:
-       with subprocess.Popen(
-           cmd,
-           stdin=subprocess.DEVNULL,
-           stdout=subprocess.PIPE,
-           stderr=subprocess.STDOUT,
-           shell=True,
-           text=True,
-           encoding="utf-8",
-           bufsize=1
-       ) as proc:
-           for linha in proc.stdout:
-               yield linha  # envia linha por linha
-       proc.wait()
-
-
-   except Exception as e:
-       yield f"\nErro ao executar o modelo: {e}\n"
-
-
-   finally:
-       os.chdir(dir_inicial)
 
 
 def extrair_palavras_chave(prompt: str) -> list:
