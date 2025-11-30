@@ -1,0 +1,41 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+<defs>
+    <linearGradient id="metal_body" x1="0" y1="0" x2="0" y2="512" gradientUnits="userSpaceOnUse">
+        <stop stop-color="#9EABB8"/> <stop offset="1" stop-color="#7A8896"/> </linearGradient>
+    <linearGradient id="screen_face" x1="256" y1="140" x2="256" y2="380" gradientUnits="userSpaceOnUse">
+        <stop stop-color="#5F6E7C"/>
+        <stop offset="1" stop-color="#4A5763"/>
+    </linearGradient>
+    <linearGradient id="blue_glow" x1="256" y1="200" x2="256" y2="350" gradientUnits="userSpaceOnUse">
+        <stop stop-color="#A7C3D9"/> <stop offset="1" stop-color="#82A4BF"/> </linearGradient>
+    <filter id="inner_shadow" x="-50%" y="-50%" width="200%" height="200%">
+        <feComponentTransfer in="SourceAlpha">
+            <feFuncA type="table" tableValues="1 0" />
+        </feComponentTransfer>
+        <feGaussianBlur stdDeviation="4"/>
+        <feOffset dx="0" dy="4" result="offsetblur"/>
+        <feFlood flood-color="rgb(0, 0, 0)" flood-opacity="0.2"/>
+        <feComposite in2="offsetblur" operator="in"/>
+        <feComposite in2="SourceAlpha" operator="in" />
+        <feMerge>
+            <feMergeNode in="SourceGraphic" />
+            <feMergeNode />
+        </feMerge>
+    </filter>
+</defs>
+
+<path d="M440 140C440 95.8172 404.183 60 360 60H152C107.817 60 72 95.8172 72 140V320C72 364.183 107.817 400 152 400H200L200 460L280 400H360C404.183 400 440 364.183 440 320V140Z" fill="url(#metal_body)"/>
+<path d="M440 140C440 95.8172 404.183 60 360 60H152C107.817 60 72 95.8172 72 140V320C72 364.183 107.817 400 152 400H200L200 460L280 400H360C404.183 400 440 364.183 440 320V140Z" stroke="#6B7A88" stroke-width="4"/>
+
+<path d="M300 60L340 20M340 20C346 14 356 14 362 20C368 26 368 36 362 42L320 84" stroke="url(#metal_body)" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="340" cy="20" r="12" fill="url(#blue_glow)"/>
+
+<rect x="112" y="140" width="288" height="200" rx="40" fill="url(#screen_face)" filter="url(#inner_shadow)"/>
+
+<ellipse cx="184" cy="220" rx="24" ry="32" fill="url(#blue_glow)"/>
+<ellipse cx="328" cy="220" rx="24" ry="32" fill="url(#blue_glow)"/>
+
+<path d="M184 280C184 280 220 320 256 320C292 320 328 280 328 280" stroke="url(#blue_glow)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+
+<path d="M152 70H360C398 70 430 102 430 140V160C430 120 398 85 360 85H152C114 85 82 120 82 160V140C82 102 114 70 152 70Z" fill="white" fill-opacity="0.2"/>
+</svg>
