@@ -1,5 +1,12 @@
 import sys
 import os
+
+# --- CORREÇÃO PARA O ERRO WinError 1114 ---
+# Define que o PyQt deve usar o ANGLE (DirectX) em vez de OpenGL puro.
+# Isso resolve a falha de inicialização de DLL em executáveis.
+os.environ['QT_OPENGL'] = 'angle'
+# ------------------------------------------
+
 import json
 import funcs
 from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QEvent
