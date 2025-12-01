@@ -2,12 +2,31 @@ def mensagem_operacao_cancelada() -> None:
     estilo = f"<div style='text-align: right;'><span style='color: red; font-family: Segoe UI; font-size: 18px;'>Operação cancelada pelo usuário</span></div><br><br>"
     return estilo
 
+
 def html_base() -> str:
+    # IMPORTANTE: Script do MathJax para renderizar equações matemáticas
     estilo = """
             <!DOCTYPE html>
         <html>
         <head>
         <meta charset="UTF-8">
+
+        <!-- Configuração do MathJax -->
+        <script>
+        window.MathJax = {
+          tex: {
+            inlineMath: [['$', '$'], ['\\\\(', '\\\\)']],
+            displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']],
+            processEscapes: true
+          },
+          options: {
+            ignoreHtmlClass: 'tex2jax_ignore',
+            processHtmlClass: 'tex2jax_process'
+          }
+        };
+        </script>
+        <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
         <style>
         body {
             font-family: Segoe UI;
@@ -17,14 +36,21 @@ def html_base() -> str:
             display: flex;
             flex-direction: column;
         }
-        
+
+        /* Cabeçalhos do Markdown convertidos */
+        h1, h2, h3 {
+            margin-top: 10px;
+            margin-bottom: 5px;
+            color: #333;
+        }
+
         /* CONTÊINER DA MENSAGEM */
         .msg-wrapper {
             width: 100%;
             display: flex;
             margin: 6px 0;
         }
-        
+
         /* BOLHA */
         .msg {
             padding: 12px 20px;
@@ -32,8 +58,9 @@ def html_base() -> str:
             max-width: 75%;
             font-size: 16px;
             text-align: justify;
+            line-height: 1.5; /* Melhor leitura */
         }
-        
+
         /* BOT (ESQUERDA) */
         .bot-wrapper {
             justify-content: flex-start;
@@ -41,7 +68,7 @@ def html_base() -> str:
         .bot {
             background: #e6e6e6;
         }
-        
+
         /* USER (DIREITA) */
         .user-wrapper {
             justify-content: flex-end;
@@ -56,14 +83,15 @@ def html_base() -> str:
     """
     return estilo
 
+
 def estilo_chat_tela() -> str:
     estilo = """
            QTextBrowser {
-               background-color: #DEE6EE;  /* fundo cinza claro */
-               color: #222222;             /* cor do texto */
-               border: 1px solid #ccc;     /* borda leve */
-               border-radius: 8px;         /* cantos arredondados */
-               padding: 8px;               /* espaçamento interno */
+               background-color: #DEE6EE;  
+               color: #222222;             
+               border: 1px solid #ccc;     
+               border-radius: 8px;         
+               padding: 8px;               
            }
        """
     return estilo
@@ -72,17 +100,17 @@ def estilo_chat_tela() -> str:
 def estilo_chat_botao() -> str:
     estilo = """
                QPushButton {
-                   background-color: rgb(245, 245, 245);     /* mais claro */
+                   background-color: rgb(245, 245, 245);
                    border: none;
                    border-radius: 20px;
                    margin: 0px;
                    padding: 0px;
                }
                QPushButton:pressed {
-                   background-color: rgb(230, 230, 230);     /* mais escuro ao pressionar */
+                   background-color: rgb(230, 230, 230);
                }
                QPushButton:hover {
-                   background-color: rgb(230, 230, 230);     /* mais escuro ao pressionar */
+                   background-color: rgb(230, 230, 230);
                }
            """
     return estilo
@@ -101,11 +129,11 @@ def estilo_botao_arquivo() -> str:
            }
            QPushButton:pressed {
                background-color: rgb(230, 230, 230);    
-                   padding-top: 2px;                       /* Faz o botão parecer afundar */
+                   padding-top: 2px;                       
                    padding-bottom: -2px;
            }
            QPushButton:hover {
-               background-color: rgb(150, 150, 150);     /* mais escuro ao pressionar */
+               background-color: rgb(150, 150, 150);     
            }
        """
     return estilo
@@ -302,4 +330,3 @@ def estilo_botao_modelos() -> str:
        }
    """
     return estilo
-
