@@ -1,9 +1,8 @@
 import sys
 import os
+import re  # Import necessário para o processamento de Markdown
 
 # --- CORREÇÃO PARA O ERRO WinError 1114 ---
-# Define que o PyQt deve usar o ANGLE (DirectX) em vez de OpenGL puro.
-# Isso resolve a falha de inicialização de DLL em executáveis.
 os.environ['QT_OPENGL'] = 'angle'
 # ------------------------------------------
 
@@ -33,6 +32,27 @@ class ChatHandler:
             self.chat_botao.setIcon(QIcon(f"{self.orig_dir}\\ícones\\seta_enviar.svg"))
             self.chat_botao.setEnabled(True)
 
+    # Função simples para converter Markdown básico em HTML
+    def formatar_texto(self, texto: str) -> str:
+        # 1. Escape HTML básico (segurança)
+        texto = (texto.replace("&", "&amp;")
+                 .replace("<", "&lt;")
+                 .replace(">", "&gt;")
+                 .replace('"', "&quot;")
+                 .replace("'", "&#39;"))
+
+        # 2. Negrito (**texto**)
+        # Regex: procura por **...**, captura o miolo e substitui por <b>...</b>
+        texto = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', texto)
+
+        # 3. Cabeçalhos (### Título)
+        # Regex: procura ### no início da linha (multiline)
+        texto = re.sub(r'(?m)^### (.*)', r'<h3>\1</h3>', texto)
+        texto = re.sub(r'(?m)^## (.*)', r'<h2>\1</h2>', texto)
+        texto = re.sub(r'(?m)^# (.*)', r'<h1>\1</h1>', texto)
+
+        return texto
+
     def adicionar_html(self, texto: str, remetente: str, raw_html: bool = False) -> None:
         if not self.chat_tela:
             return
@@ -41,17 +61,22 @@ class ChatHandler:
         if raw_html:
             texto_final = texto
         else:
-            texto_final = (
-                str(texto).replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace('"', "&quot;")
-                .replace("'", "&#39;")
-                .replace("\n", "<br>")
-            )
+            # Usa o formatador que lida com Markdown básico e escape
+            texto_final = self.formatar_texto(texto)
 
         # 2. Serializar para JavaScript
         js_content = json.dumps(texto_final)
+
+        # Snippet JS para rolar a tela, aguardando o MathJax
+        js_scroll_logic = """
+            if (window.MathJax) {
+                MathJax.typesetPromise().then(() => {
+                    window.scrollTo(0, document.body.scrollHeight);
+                });
+            } else {
+                window.scrollTo(0, document.body.scrollHeight);
+            }
+        """
 
         if remetente == 'user':
             wrapper_class = "user-wrapper"
@@ -64,10 +89,11 @@ class ChatHandler:
                 wrapper.className = '{wrapper_class} msg-wrapper';
                 var msg = document.createElement('div');
                 msg.className = '{msg_class} msg';
+                msg.style.whiteSpace = 'pre-wrap'; 
                 msg.innerHTML = {js_content}; 
                 wrapper.appendChild(msg);
                 document.getElementById('chat').appendChild(wrapper);
-                window.scrollTo(0, document.body.scrollHeight);
+                {js_scroll_logic}
             """
             self.j += 1
         else:
@@ -78,10 +104,11 @@ class ChatHandler:
                     wrapper.className = 'bot-wrapper msg-wrapper';
                     var msg = document.createElement('div');
                     msg.className = 'bot msg';
+                    msg.style.whiteSpace = 'pre-wrap'; 
                     msg.innerHTML = {js_content};
                     wrapper.appendChild(msg);
                     document.getElementById('chat').appendChild(wrapper);
-                    window.scrollTo(0, document.body.scrollHeight);
+                    {js_scroll_logic}
                 """
                 self.div_bot_criada = True
             else:
@@ -89,8 +116,19 @@ class ChatHandler:
                 var wrapper = document.getElementById('msg_{self.j}');
                 if (wrapper) {{
                     var msg_div = wrapper.querySelector('.bot');
-                    msg_div.innerHTML += {js_content};
-                    window.scrollTo(0, document.body.scrollHeight);
+                    msg_div.style.whiteSpace = 'pre-wrap'; 
+
+                    var span = document.createElement('span');
+                    span.innerHTML = {js_content};
+                    msg_div.appendChild(span);
+
+                    if (window.MathJax) {{ 
+                        MathJax.typesetPromise([span]).then(() => {{
+                             window.scrollTo(0, document.body.scrollHeight);
+                        }}); 
+                    }} else {{
+                        window.scrollTo(0, document.body.scrollHeight);
+                    }}
                 }}
                 """
 
@@ -115,11 +153,9 @@ class MinhaJanela(QWidget):
     def eventFilter(self, source, event):
         if event.type() == QEvent.Type.KeyPress and source is self.chat_prompt:
             if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-                # Se Shift estiver pressionado, permite a quebra de linha normal
                 if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
                     return super().eventFilter(source, event)
 
-                # Caso contrário, clica no botão (Enviar) e consome o evento (impede nova linha)
                 self.chat_botao.click()
                 return True
         return super().eventFilter(source, event)
