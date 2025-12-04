@@ -1,7 +1,6 @@
 import sys
 import os
 import re
-import markdown
 
 # Configuração gráfica
 os.environ['QT_OPENGL'] = 'angle'
@@ -16,6 +15,15 @@ from PyQt6.QtWebEngineWidgets import QWebEngineView
 import janelas
 import estilos
 from threads import PromptThread, CarregarArquivoThread
+
+# Tenta importar markdown, fallback se não existir
+try:
+    import markdown
+
+    TEM_MARKDOWN = True
+except ImportError:
+    TEM_MARKDOWN = False
+    print("Aviso: Biblioteca 'markdown' não encontrada. Usando texto simples.")
 
 
 class ChatHandler:
@@ -33,38 +41,41 @@ class ChatHandler:
             self.chat_botao.setEnabled(True)
 
     def formatar_texto(self, texto: str) -> str:
-        # Limpeza de artefatos
+        # Limpeza de artefatos do modelo
+        texto = re.sub(r'^(system|user|assistant|analysis)+', '', texto, flags=re.IGNORECASE | re.MULTILINE)
         texto = re.sub(r'^(#+)([^ \n])', r'\1 \2', texto, flags=re.MULTILINE)
         texto = re.sub(r'-{2,}#{2,}', '\n\n', texto)
-        try:
-            html = markdown.markdown(texto, extensions=['tables', 'fenced_code', 'nl2br'])
-            return html
-        except Exception as e:
-            print(f"Erro markdown: {e}")
-            return texto
+
+        if TEM_MARKDOWN:
+            try:
+                html = markdown.markdown(texto, extensions=['tables', 'fenced_code', 'nl2br'])
+                return html
+            except Exception as e:
+                print(f"Erro markdown: {e}")
+
+        # Fallback simples
+        return texto.replace("\n", "<br>")
 
     def mostrar_digitando(self):
         if not self.chat_tela: return
 
-        # Cria ou recria os pontinhos no final do chat
+        # Cria ou move os pontinhos para o final
         js = """
-        (function() {
-            var chat = document.getElementById('chat');
-            var old = document.getElementById('typing_indicator');
-            if (old) old.remove();
-
+        var chat = document.getElementById('chat');
+        var existing = document.getElementById('typing_indicator');
+        if (existing) {
+            chat.appendChild(existing); // Move para o final
+        } else {
             var wrapper = document.createElement('div');
             wrapper.id = 'typing_indicator';
             wrapper.className = 'msg-wrapper bot-wrapper';
-
             var msg = document.createElement('div');
             msg.className = 'msg bot';
             msg.innerHTML = '<div class="typing"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>';
-
             wrapper.appendChild(msg);
             chat.appendChild(wrapper);
-            window.scrollTo(0, document.body.scrollHeight);
-        })();
+        }
+        window.scrollTo(0, document.body.scrollHeight);
         """
         self.chat_tela.page().runJavaScript(js)
 
@@ -73,61 +84,52 @@ class ChatHandler:
         js = "var el = document.getElementById('typing_indicator'); if(el) el.remove();"
         self.chat_tela.page().runJavaScript(js)
 
-    # --- NOVO MÉTODO: Adiciona avisos do sistema (ex: cancelamento) em div separada ---
     def adicionar_aviso(self, html_aviso: str):
         if not self.chat_tela: return
 
         js_content = json.dumps(html_aviso)
-        # Agora usamos as classes de bot ('msg-wrapper bot-wrapper' e 'msg bot')
-        # para que o aviso tenha o mesmo formato de balão, mantendo o conteúdo vermelho.
         js = f"""
-        (function() {{
             var chat = document.getElementById('chat');
-
-            var wrapper = document.createElement('div');
-            wrapper.className = 'msg-wrapper bot-wrapper'; // Estilo de posicionamento do bot
-
-            var msg = document.createElement('div');
-            msg.className = 'msg bot'; // Estilo visual da bolha do bot
-            msg.innerHTML = {js_content};
-
-            wrapper.appendChild(msg);
-
-            // Remove typing se existir antes de adicionar o aviso
             var typing = document.getElementById('typing_indicator');
             if(typing) typing.remove();
 
+            var wrapper = document.createElement('div');
+            wrapper.className = 'msg-wrapper bot-wrapper';
+            var msg = document.createElement('div');
+            msg.className = 'msg bot'; 
+            msg.innerHTML = {js_content};
+
+            wrapper.appendChild(msg);
             chat.appendChild(wrapper);
             window.scrollTo(0, document.body.scrollHeight);
-        }})();
         """
         self.chat_tela.page().runJavaScript(js)
 
     def adicionar_html(self, texto: str, remetente: str, raw_html: bool = False, streaming: bool = False) -> None:
         if not self.chat_tela: return
 
-        # 1. Preparação do conteúdo
         if raw_html:
             texto_final = texto
         else:
-            if remetente == 'user' or streaming:
-                texto_final = (texto.replace("&", "&amp;")
+            # Se for user ou streaming, texto simples (rápido). Se for bot final, Markdown.
+            if (remetente == 'user' or streaming) and not TEM_MARKDOWN:
+                # Limpeza básica para streaming
+                texto_limpo = re.sub(r'^(system|user|assistant)+', '', texto, flags=re.IGNORECASE)
+                texto_final = (texto_limpo.replace("&", "&amp;")
                                .replace("<", "&lt;")
-                               .replace(">", "&gt;"))
-                texto_final = texto_final.replace("\n", "<br>")
+                               .replace(">", "&gt;")
+                               .replace("\n", "<br>"))
             else:
                 texto_final = self.formatar_texto(texto)
 
         js_content = json.dumps(texto_final)
 
-        # 2. Scripts auxiliares
         js_scroll = "window.scrollTo(0, document.body.scrollHeight);"
 
         js_mathjax = ""
         if not streaming and remetente == 'bot':
             js_mathjax = "if(window.MathJax && typeof msg_div !== 'undefined') { MathJax.typesetPromise([msg_div]).then(() => " + js_scroll + "); }"
 
-        # 3. Lógica de Inserção
         if remetente == 'user':
             wrapper_id = f"msg_{self.j}"
             wrapper_class = "user-wrapper"
@@ -135,9 +137,8 @@ class ChatHandler:
             self.div_bot_criada = False
             self.j += 1
 
-            # Insere ANTES dos pontinhos (se existirem), ou no final (se null)
+            # JS simplificado: Cria user, depois move typing para baixo
             js = f"""
-            (function() {{
                 var chat = document.getElementById('chat');
                 var wrapper = document.createElement('div');
                 wrapper.id = '{wrapper_id}';
@@ -146,28 +147,25 @@ class ChatHandler:
                 msg.className = '{msg_class} msg';
                 msg.innerHTML = {js_content}; 
                 wrapper.appendChild(msg);
+                chat.appendChild(wrapper);
 
                 var typing = document.getElementById('typing_indicator');
-                if (typing) {{
-                    chat.insertBefore(wrapper, typing);
-                }} else {{
-                    chat.appendChild(wrapper);
-                }}
+                if (typing) chat.appendChild(typing); // Move para o final
 
                 {js_scroll}
-            }})();
             """
 
         else:  # BOT
             if not self.div_bot_criada:
-                # Criar nova bolha
+                # CRIAR NOVA
                 wrapper_id = f"msg_{self.j}"
                 self.div_bot_criada = True
                 self.j += 1
 
                 js = f"""
-                (function() {{
                     var chat = document.getElementById('chat');
+
+                    // Cria bot msg
                     var wrapper = document.createElement('div');
                     wrapper.id = '{wrapper_id}';
                     wrapper.className = 'bot-wrapper msg-wrapper';
@@ -176,41 +174,40 @@ class ChatHandler:
                     var msg_div = msg;
                     msg.innerHTML = {js_content};
                     wrapper.appendChild(msg);
+                    chat.appendChild(wrapper);
 
-                    // Adiciona msg ao chat (antes dos pontinhos se houver)
+                    // Garante que typing vá para o final se existir
                     var typing = document.getElementById('typing_indicator');
-                    if (typing) {{
-                        chat.insertBefore(wrapper, typing);
-                    }} else {{
-                        chat.appendChild(wrapper);
+                    if (typing) chat.appendChild(typing);
+                    else if ({str(streaming).lower()}) {{
+                        // Se não existe e é streaming, cria
+                        var tWrap = document.createElement('div');
+                        tWrap.id = 'typing_indicator';
+                        tWrap.className = 'msg-wrapper bot-wrapper';
+                        tWrap.innerHTML = '<div class="msg bot"><div class="typing"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div></div>';
+                        chat.appendChild(tWrap);
                     }}
 
                     {js_mathjax}
                     if (!window.MathJax) {{ {js_scroll} }}
-                }})();
                 """
             else:
-                # Atualizar bolha existente
+                # ATUALIZAR
                 prev_id = f"msg_{self.j - 1}"
 
                 js = f"""
-                (function() {{
                     var wrapper = document.getElementById('{prev_id}');
                     if (wrapper) {{
                         var msg_div = wrapper.querySelector('.bot');
                         msg_div.innerHTML = {js_content};
 
-                        // Garante que os pontinhos continuam no final
                         var chat = document.getElementById('chat');
                         var typing = document.getElementById('typing_indicator');
-                        if (typing && chat.lastElementChild !== typing) {{
-                            chat.appendChild(typing);
-                        }}
+                        if (typing) chat.appendChild(typing); // Mantém no final
 
                         {js_mathjax}
                         if (!window.MathJax) {{ {js_scroll} }}
                     }}
-                }})();
                 """
 
         self.chat_tela.page().runJavaScript(js)
@@ -233,7 +230,6 @@ class MinhaJanela(QWidget):
         self.historico_atual = []
         self.nome_arquivo_atual = None
         self.buffer_resposta_bot = ""
-        self.primeiro_chunk_recebido = False
 
         self.setWindowTitle("PyChatBot")
         self.setFixedSize(1024, 800)
@@ -262,21 +258,17 @@ class MinhaJanela(QWidget):
     def receber_parte_resposta(self, texto: str, remetente: str):
         if remetente == 'bot':
             self.buffer_resposta_bot += texto
-            # Atualiza a div existente do bot
             self.chat_handler.adicionar_html(self.buffer_resposta_bot, remetente, streaming=True)
         else:
             pass
 
     def on_resposta_finalizada(self) -> None:
         self.gerando_resposta = False
-        # Esconde pontinhos só no final
         self.chat_handler.esconder_digitando()
-
         self.chat_botao.setIcon(QIcon(f"{self.orig_dir}\\ícones\\seta_enviar.svg"))
         self.habilitar_controles()
 
         if self.buffer_resposta_bot:
-            # Render final (Markdown + MathJax)
             self.chat_handler.adicionar_html(self.buffer_resposta_bot, 'bot', streaming=False)
             self.historico_atual.append({"role": "bot", "content": self.buffer_resposta_bot})
             self.buffer_resposta_bot = ""
@@ -398,16 +390,11 @@ class MinhaJanela(QWidget):
 
                 msg_cancel = estilos.mensagem_operacao_cancelada()
 
-                # Renderiza o que já foi gerado (sem misturar com o aviso)
                 if self.buffer_resposta_bot:
-                    # Renderiza o bot como finalizado (Markdown)
                     self.chat_handler.adicionar_html(self.buffer_resposta_bot, 'bot', streaming=False)
-
                     self.historico_atual.append({"role": "bot", "content": self.buffer_resposta_bot + " [Cancelado]"})
 
-                # Adiciona o aviso em uma div separada abaixo
                 self.chat_handler.adicionar_aviso(msg_cancel)
-
                 self.buffer_resposta_bot = ""
                 self.habilitar_controles()
                 return
@@ -518,28 +505,25 @@ class MinhaJanela(QWidget):
         self.chat_prompt.textChanged.connect(esconder_mostrar_botao)
         self.chat_prompt.installEventFilter(self)
 
-        # --- ATUALIZAÇÃO DO ESTILO DA BARRA DE PROMPT (FIX COLAR TEXTO) ---
-        # acceptRichText(False) garante que colar texto não traga formatação indesejada (negrito, fontes, etc)
         self.chat_prompt.setAcceptRichText(False)
 
         self.chat_prompt.setStyleSheet("""
            QTextEdit {
                color: black;
                background-color: white;
-               border: 2px solid #aaa; /* Borda mais evidente */
+               border: 2px solid #aaa; 
                border-radius: 10px;
                padding: 8px;
                font-size: 14px;
            }
            QTextEdit:focus {
-               border: 2px solid #5c9eff; /* Destaque ao focar */
+               border: 2px solid #5c9eff; 
            }
        """)
 
-        # --- ADIÇÃO DA SOMBRA (Drop Shadow Effect) ---
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(15)
-        shadow.setColor(QColor(0, 0, 0, 50))  # Sombra preta com transparência
+        shadow.setColor(QColor(0, 0, 0, 50))
         shadow.setOffset(0, 2)
         self.chat_prompt.setGraphicsEffect(shadow)
 
@@ -576,12 +560,11 @@ class MinhaJanela(QWidget):
                 self.botao_modelo.addItem("Adicionar modelo")
                 if novo_modelo:
                     self.botao_modelo.setCurrentText(novo_modelo)
-                    self.nova_conversa()  # Reseta se adicionou
+                    self.nova_conversa()
                 else:
                     if self.botao_modelo.count() > 1: self.botao_modelo.setCurrentIndex(0)
                 self.botao_modelo.blockSignals(False)
             else:
-                # Reseta a conversa ao trocar de modelo
                 self.nova_conversa()
 
         self.botao_modelo.currentIndexChanged.connect(ao_trocar_modelo)
