@@ -15,47 +15,44 @@ class PromptThread(QThread):
     botao_prompt = pyqtSignal(bool)
     sinal_resposta_finalizada = pyqtSignal()
 
-    def __init__(self, modelo):
+    # Atualizado __init__ para receber temperature em vez de system_prompt
+    def __init__(self, modelo, temperature=0.7, n_experts=0):
         super().__init__()
         self.modelo = modelo
+        self.temperature = temperature
+        self.n_experts = n_experts
+
         self.proc = None
         self.thread_running = False
         self.prompt_queue = queue.Queue()
         self.base_dir = os.getcwd()
         self.model_path = os.path.join(self.base_dir, "Llama", "Modelos", self.modelo)
-        # Flag inicializada como True para ignorar o '>' que aparece na inicialização do modelo
         self.ignorar_primeiro_prompt = True
 
     def limpar_ansi(self, txt):
-        return re.sub(r'\x1B\[[0-9;]*[mK]', '', txt)
+        txt = re.sub(r'\x1B\[[0-9;]*[mK]', '', txt)
+        txt = re.sub(r'<\|.*?\|>', '', txt)
+        return txt
 
     def enviar_prompt(self, prompt: str):
         self.prompt_queue.put(prompt)
 
     def _reader_loop(self):
-        """
-        Lê a saída (stdout) byte a byte para evitar bloqueios em prompts sem 'newline'.
-        Usa um buffer de bytes para corrigir a decodificação UTF-8 de caracteres acentuados.
-        """
-        # Lista de prefixos para ignorar
         ignore_list = [
             "load_backend:", "build:", "main:", "print_info:", "load:",
             "load_tensors:", "common_init_from_params:", "sampler",
             "generate:", "== Running", "- Press", "- To return",
             "- If you want", "- Not using", "system_info:", "......",
-            "<|im_start|>", "repeat_last_n", "dry_multiplier", "top_k",
+            "repeat_last_n", "dry_multiplier", "top_k",
             "mirostat", "repeat_penalty", "frequency_penalty",
             "You are a helpful assistant", "Hello<|im_end|>", "Hi there", "How are you?"
         ]
 
-        # Buffer de texto (acumula caracteres até formar uma linha ou prompt)
         text_buffer = ""
-        # Buffer de bytes (acumula bytes até formar um caractere UTF-8 válido)
         byte_buffer = bytearray()
 
         while self.thread_running and self.proc:
             try:
-                # 1. Lê 1 byte bruto
                 byte = self.proc.stdout.read(1)
 
                 if not byte:
@@ -64,56 +61,40 @@ class PromptThread(QThread):
                     time.sleep(0.01)
                     continue
 
-                # 2. Adiciona ao buffer de bytes
                 byte_buffer.extend(byte)
 
-                # 3. Tenta descodificar os bytes acumulados
                 try:
                     char = byte_buffer.decode("utf-8")
-                    # Se funcionou, limpamos o buffer de bytes e processamos o caractere
                     byte_buffer.clear()
                 except UnicodeDecodeError:
-                    # Se falhou, é porque o caractere está incompleto (ex: 1º byte de um 'ã').
-                    # Continuamos o loop para ler o próximo byte e juntar.
                     continue
 
-                # 4. Adiciona o caractere decodificado ao buffer de texto
                 text_buffer += char
 
-                # 5. Se encontrou quebra de linha, processa a mensagem
                 if char == '\n':
                     texto_limpo = self.limpar_ansi(text_buffer.strip())
-                    text_buffer = ""  # Limpa o buffer de texto
+                    text_buffer = ""
 
-                    # Filtros de lixo
                     eh_lixo = False
                     for prefix in ignore_list:
                         if texto_limpo.startswith(prefix):
                             eh_lixo = True
                             break
                     if texto_limpo.startswith("llama_"): eh_lixo = True
-                    # Ignora linhas vazias ou contendo apenas o prompt isolado no meio do fluxo
                     if texto_limpo in [">", ">>>"]: eh_lixo = True
 
                     if not eh_lixo and texto_limpo:
                         if texto_limpo.startswith("> "): texto_limpo = texto_limpo[2:]
                         self.linha.emit(texto_limpo, 'bot')
 
-                # 6. Detecção do sinal de fim (PROMPT) sem quebra de linha
-                # Verifica se o buffer termina com os marcadores conhecidos
                 elif text_buffer.endswith(">") or text_buffer.endswith(">>>"):
-                    # Verificação rigorosa: o buffer deve conter APENAS o prompt
                     limpo = self.limpar_ansi(text_buffer).strip()
 
                     if limpo in [">", ">>>"]:
-                        # LÓGICA DE CORREÇÃO DO BOTÃO:
-                        # Se for o primeiro '>' (startup), ignoramos para não resetar o botão antes da hora.
                         if self.ignorar_primeiro_prompt:
                             self.ignorar_primeiro_prompt = False
-                            # Limpamos o buffer para não processar este '>' como texto
                             text_buffer = ""
                         else:
-                            # Caso contrário, é o fim real da resposta.
                             self.sinal_resposta_finalizada.emit()
                             text_buffer = ""
 
@@ -142,12 +123,18 @@ class PromptThread(QThread):
         except ValueError:
             caminho_modelo_relativo = self.model_path
 
+        # Monta o comando com o argumento de temperatura
         cmd = [
             caminho_executavel,
             "-m", caminho_modelo_relativo,
             "--interactive",
-            "--conversation"
+            "--conversation",
+            "--temp", str(self.temperature)  # Adicionado controle de temperatura
         ]
+
+        # Argumento opcional de experts (se suportado no futuro)
+        # if self.n_experts > 0:
+        #     cmd.extend(["-ne", str(self.n_experts)])
 
         try:
             flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
@@ -157,8 +144,8 @@ class PromptThread(QThread):
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
-                text=False,  # Modo binário (crucial para o byte_buffer funcionar)
-                bufsize=0,  # Sem buffer do SO
+                text=False,
+                bufsize=0,
                 cwd=pasta_llama,
                 creationflags=flags
             )
@@ -171,12 +158,7 @@ class PromptThread(QThread):
                     prompt = self.prompt_queue.get(timeout=0.5)
                     self.linha.emit(prompt, 'user')
 
-                    # REMOVIDO: self.ignorar_primeiro_prompt = True
-                    # Não devemos ignorar o prompt de retorno após enviar uma mensagem,
-                    # apenas o prompt inicial de startup (tratado no __init__).
-
                     if self.proc and self.proc.stdin:
-                        # Codifica para bytes antes de enviar
                         bytes_prompt = (prompt + "\n").encode("utf-8")
                         self.proc.stdin.write(bytes_prompt)
                         self.proc.stdin.flush()
