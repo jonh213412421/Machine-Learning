@@ -4,7 +4,6 @@ def mensagem_operacao_cancelada() -> None:
 
 
 def html_base() -> str:
-    # IMPORTANTE: Script do MathJax para renderizar equações matemáticas
     estilo = """
             <!DOCTYPE html>
         <html>
@@ -37,11 +36,60 @@ def html_base() -> str:
             flex-direction: column;
         }
 
-        /* Cabeçalhos do Markdown convertidos */
-        h1, h2, h3 {
-            margin-top: 10px;
-            margin-bottom: 5px;
+        /* ESTILO PARA TABELAS */
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 15px 0;
+            font-size: 14px;
+            background-color: white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        th {
+            background-color: #f2f2f2;
             color: #333;
+            font-weight: bold;
+            text-align: left;
+            padding: 10px;
+            border: 1px solid #ddd;
+        }
+        td {
+            padding: 8px 10px;
+            border: 1px solid #ddd;
+            text-align: left;
+            color: #444;
+        }
+        tr:nth-child(even) {
+            background-color: #fafafa;
+        }
+        tr:hover {
+            background-color: #f1f1f1;
+        }
+
+        h1, h2, h3, h4 {
+            margin-top: 15px;
+            margin-bottom: 8px;
+            color: #2c3e50;
+        }
+        code {
+            background-color: #f4f4f4;
+            padding: 2px 4px;
+            border-radius: 4px;
+            font-family: Consolas, monospace;
+            font-size: 0.9em;
+        }
+        pre {
+            background-color: #f8f8f8;
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #eee;
+            overflow-x: auto;
+        }
+        blockquote {
+            border-left: 4px solid #ccc;
+            margin: 10px 0;
+            padding-left: 10px;
+            color: #666;
         }
 
         /* CONTÊINER DA MENSAGEM */
@@ -55,26 +103,39 @@ def html_base() -> str:
         .msg {
             padding: 12px 20px;
             border-radius: 10px;
-            max-width: 75%;
+            max-width: 85%;
             font-size: 16px;
-            text-align: justify;
-            line-height: 1.5; /* Melhor leitura */
+            text-align: left;
+            line-height: 1.6;
         }
 
-        /* BOT (ESQUERDA) */
-        .bot-wrapper {
-            justify-content: flex-start;
-        }
-        .bot {
-            background: #e6e6e6;
-        }
+        .bot-wrapper { justify-content: flex-start; }
+        .bot { background: #e6e6e6; }
 
-        /* USER (DIREITA) */
-        .user-wrapper {
-            justify-content: flex-end;
+        .user-wrapper { justify-content: flex-end; }
+        .user { background: #dcf8c6; }
+
+        /* --- ANIMAÇÃO DE DIGITANDO (TRÊS PONTINHOS) - ESSENCIAL --- */
+        .typing {
+            display: flex;
+            align-items: center;
+            column-gap: 4px;
+            height: 24px;
+            padding: 0 5px; /* Espaço extra */
         }
-        .user {
-            background: #dcf8c6;
+        .dot {
+            width: 8px;
+            height: 8px;
+            background-color: #555; /* Cor mais escura para visibilidade */
+            border-radius: 50%;
+            animation: typing 1s infinite alternate;
+        }
+        .dot:nth-child(2) { animation-delay: 0.2s; }
+        .dot:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes typing {
+            0% { transform: translateY(0); opacity: 0.4; }
+            100% { transform: translateY(-5px); opacity: 1; }
         }
         </style>
         </head>
