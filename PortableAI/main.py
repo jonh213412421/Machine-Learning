@@ -1,18 +1,17 @@
 import sys
 import os
 import re
+import markdown
 
-# --- CONFIGURAÇÃO GRÁFICA ---
-# Define que o PyQt deve usar o ANGLE (DirectX) em vez de OpenGL puro.
+# Configuração gráfica
 os.environ['QT_OPENGL'] = 'angle'
-# ----------------------------
 
 import json
 import funcs
 from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QEvent
-from PyQt6.QtGui import QIcon, QFont, QShortcut, QKeySequence
+from PyQt6.QtGui import QIcon, QFont, QShortcut, QKeySequence, QColor
 from PyQt6.QtWidgets import QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QComboBox, QTextEdit, \
-    QFrame, QSlider
+    QFrame, QSlider, QGraphicsDropShadowEffect
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 import janelas
 import estilos
@@ -34,103 +33,185 @@ class ChatHandler:
             self.chat_botao.setEnabled(True)
 
     def formatar_texto(self, texto: str) -> str:
-        # Escape básico
-        texto = (texto.replace("&", "&amp;")
-                 .replace("<", "&lt;")
-                 .replace(">", "&gt;")
-                 .replace('"', "&quot;")
-                 .replace("'", "&#39;"))
-        # Markdown simples
-        texto = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', texto)
-        texto = re.sub(r'(?m)^### (.*)', r'<h3>\1</h3>', texto)
-        texto = re.sub(r'(?m)^## (.*)', r'<h2>\1</h2>', texto)
-        texto = re.sub(r'(?m)^# (.*)', r'<h1>\1</h1>', texto)
-        return texto
+        # Limpeza de artefatos
+        texto = re.sub(r'^(#+)([^ \n])', r'\1 \2', texto, flags=re.MULTILINE)
+        texto = re.sub(r'-{2,}#{2,}', '\n\n', texto)
+        try:
+            html = markdown.markdown(texto, extensions=['tables', 'fenced_code', 'nl2br'])
+            return html
+        except Exception as e:
+            print(f"Erro markdown: {e}")
+            return texto
 
-    def adicionar_html(self, texto: str, remetente: str, raw_html: bool = False) -> None:
+    def mostrar_digitando(self):
         if not self.chat_tela: return
 
+        # Cria ou recria os pontinhos no final do chat
+        js = """
+        (function() {
+            var chat = document.getElementById('chat');
+            var old = document.getElementById('typing_indicator');
+            if (old) old.remove();
+
+            var wrapper = document.createElement('div');
+            wrapper.id = 'typing_indicator';
+            wrapper.className = 'msg-wrapper bot-wrapper';
+
+            var msg = document.createElement('div');
+            msg.className = 'msg bot';
+            msg.innerHTML = '<div class="typing"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>';
+
+            wrapper.appendChild(msg);
+            chat.appendChild(wrapper);
+            window.scrollTo(0, document.body.scrollHeight);
+        })();
+        """
+        self.chat_tela.page().runJavaScript(js)
+
+    def esconder_digitando(self):
+        if not self.chat_tela: return
+        js = "var el = document.getElementById('typing_indicator'); if(el) el.remove();"
+        self.chat_tela.page().runJavaScript(js)
+
+    # --- NOVO MÉTODO: Adiciona avisos do sistema (ex: cancelamento) em div separada ---
+    def adicionar_aviso(self, html_aviso: str):
+        if not self.chat_tela: return
+
+        js_content = json.dumps(html_aviso)
+        js = f"""
+        (function() {{
+            var chat = document.getElementById('chat');
+            var div = document.createElement('div');
+            div.style.width = '100%';
+            div.style.marginBottom = '10px';
+            div.innerHTML = {js_content};
+
+            // Remove typing se existir antes de adicionar o aviso
+            var typing = document.getElementById('typing_indicator');
+            if(typing) typing.remove();
+
+            chat.appendChild(div);
+            window.scrollTo(0, document.body.scrollHeight);
+        }})();
+        """
+        self.chat_tela.page().runJavaScript(js)
+
+    def adicionar_html(self, texto: str, remetente: str, raw_html: bool = False, streaming: bool = False) -> None:
+        if not self.chat_tela: return
+
+        # 1. Preparação do conteúdo
         if raw_html:
             texto_final = texto
         else:
-            texto_final = self.formatar_texto(texto)
+            if remetente == 'user' or streaming:
+                texto_final = (texto.replace("&", "&amp;")
+                               .replace("<", "&lt;")
+                               .replace(">", "&gt;"))
+                texto_final = texto_final.replace("\n", "<br>")
+            else:
+                texto_final = self.formatar_texto(texto)
 
         js_content = json.dumps(texto_final)
 
-        # Script para rolar a tela após renderização do MathJax
-        js_scroll_logic = """
-            if (window.MathJax) {
-                MathJax.typesetPromise().then(() => {
-                    window.scrollTo(0, document.body.scrollHeight);
-                });
-            } else {
-                window.scrollTo(0, document.body.scrollHeight);
-            }
-        """
+        # 2. Scripts auxiliares
+        js_scroll = "window.scrollTo(0, document.body.scrollHeight);"
 
+        js_mathjax = ""
+        if not streaming and remetente == 'bot':
+            js_mathjax = "if(window.MathJax && typeof msg_div !== 'undefined') { MathJax.typesetPromise([msg_div]).then(() => " + js_scroll + "); }"
+
+        # 3. Lógica de Inserção
         if remetente == 'user':
+            wrapper_id = f"msg_{self.j}"
             wrapper_class = "user-wrapper"
             msg_class = "user"
             self.div_bot_criada = False
+            self.j += 1
 
+            # Insere ANTES dos pontinhos (se existirem), ou no final (se null)
             js = f"""
+            (function() {{
+                var chat = document.getElementById('chat');
                 var wrapper = document.createElement('div');
-                wrapper.id = 'msg_{self.j}';
+                wrapper.id = '{wrapper_id}';
                 wrapper.className = '{wrapper_class} msg-wrapper';
                 var msg = document.createElement('div');
                 msg.className = '{msg_class} msg';
-                msg.style.whiteSpace = 'pre-wrap'; 
                 msg.innerHTML = {js_content}; 
                 wrapper.appendChild(msg);
-                document.getElementById('chat').appendChild(wrapper);
-                {js_scroll_logic}
+
+                var typing = document.getElementById('typing_indicator');
+                if (typing) {{
+                    chat.insertBefore(wrapper, typing);
+                }} else {{
+                    chat.appendChild(wrapper);
+                }}
+
+                {js_scroll}
+            }})();
             """
-            self.j += 1
-        else:
+
+        else:  # BOT
             if not self.div_bot_criada:
+                # Criar nova bolha
+                wrapper_id = f"msg_{self.j}"
+                self.div_bot_criada = True
+                self.j += 1
+
                 js = f"""
+                (function() {{
+                    var chat = document.getElementById('chat');
                     var wrapper = document.createElement('div');
-                    wrapper.id = 'msg_{self.j}';
+                    wrapper.id = '{wrapper_id}';
                     wrapper.className = 'bot-wrapper msg-wrapper';
                     var msg = document.createElement('div');
                     msg.className = 'bot msg';
-                    msg.style.whiteSpace = 'pre-wrap'; 
+                    var msg_div = msg;
                     msg.innerHTML = {js_content};
                     wrapper.appendChild(msg);
-                    document.getElementById('chat').appendChild(wrapper);
-                    {js_scroll_logic}
-                """
-                self.div_bot_criada = True
-            else:
-                js = f"""
-                var wrapper = document.getElementById('msg_{self.j}');
-                if (wrapper) {{
-                    var msg_div = wrapper.querySelector('.bot');
-                    msg_div.style.whiteSpace = 'pre-wrap'; 
-                    var span = document.createElement('span');
-                    span.innerHTML = {js_content};
-                    msg_div.appendChild(span);
-                    if (window.MathJax) {{ 
-                        MathJax.typesetPromise([span]).then(() => {{
-                             window.scrollTo(0, document.body.scrollHeight);
-                        }}); 
+
+                    // Adiciona msg ao chat (antes dos pontinhos se houver)
+                    var typing = document.getElementById('typing_indicator');
+                    if (typing) {{
+                        chat.insertBefore(wrapper, typing);
                     }} else {{
-                        window.scrollTo(0, document.body.scrollHeight);
+                        chat.appendChild(wrapper);
                     }}
-                }}
+
+                    {js_mathjax}
+                    if (!window.MathJax) {{ {js_scroll} }}
+                }})();
+                """
+            else:
+                # Atualizar bolha existente
+                prev_id = f"msg_{self.j - 1}"
+
+                js = f"""
+                (function() {{
+                    var wrapper = document.getElementById('{prev_id}');
+                    if (wrapper) {{
+                        var msg_div = wrapper.querySelector('.bot');
+                        msg_div.innerHTML = {js_content};
+
+                        // Garante que os pontinhos continuam no final
+                        var chat = document.getElementById('chat');
+                        var typing = document.getElementById('typing_indicator');
+                        if (typing && chat.lastElementChild !== typing) {{
+                            chat.appendChild(typing);
+                        }}
+
+                        {js_mathjax}
+                        if (!window.MathJax) {{ {js_scroll} }}
+                    }}
+                }})();
                 """
 
-        try:
-            self.chat_tela.page().runJavaScript(js)
-        except Exception as e:
-            print("Error running JavaScript:", e)
+        self.chat_tela.page().runJavaScript(js)
 
     def limpar_chat(self):
-        """Limpa a tela do chat mantendo o estilo base"""
         self.j = 0
         self.div_bot_criada = False
         if self.chat_tela:
-            # FIX: Usar JS para limpar evita race condition com setHtml
             self.chat_tela.page().runJavaScript("document.getElementById('chat').innerHTML = '';")
 
 
@@ -142,10 +223,10 @@ class MinhaJanela(QWidget):
         self.sidebar_estendida = True
         self.gerando_resposta = False
 
-        # --- ESTADO DA CONVERSA ---
         self.historico_atual = []
         self.nome_arquivo_atual = None
         self.buffer_resposta_bot = ""
+        self.primeiro_chunk_recebido = False
 
         self.setWindowTitle("PyChatBot")
         self.setFixedSize(1024, 800)
@@ -160,37 +241,44 @@ class MinhaJanela(QWidget):
                 return True
         return super().eventFilter(source, event)
 
-    # --- Métodos auxiliares de UI ---
     def desabilitar_controles(self) -> None:
         self.botao_arquivo.setDisabled(True)
         self.botao_modelo.setDisabled(True)
+        self.slider_temp.setDisabled(True)
 
     def habilitar_controles(self) -> None:
         self.botao_arquivo.setDisabled(False)
         self.botao_modelo.setDisabled(False)
+        if self.thread is None or not self.thread.isRunning():
+            self.slider_temp.setDisabled(False)
 
     def receber_parte_resposta(self, texto: str, remetente: str):
-        """Chamado a cada pedaço de texto que o modelo gera"""
-        self.chat_handler.adicionar_html(texto, remetente)
         if remetente == 'bot':
             self.buffer_resposta_bot += texto
+            # Atualiza a div existente do bot
+            self.chat_handler.adicionar_html(self.buffer_resposta_bot, remetente, streaming=True)
+        else:
+            pass
 
     def on_resposta_finalizada(self) -> None:
-        """Chamado quando o modelo termina (prompt >>> detectado)"""
         self.gerando_resposta = False
+        # Esconde pontinhos só no final
+        self.chat_handler.esconder_digitando()
+
         self.chat_botao.setIcon(QIcon(f"{self.orig_dir}\\ícones\\seta_enviar.svg"))
         self.habilitar_controles()
 
-        # Salvar a resposta completa do bot no histórico
         if self.buffer_resposta_bot:
+            # Render final (Markdown + MathJax)
+            self.chat_handler.adicionar_html(self.buffer_resposta_bot, 'bot', streaming=False)
             self.historico_atual.append({"role": "bot", "content": self.buffer_resposta_bot})
             self.buffer_resposta_bot = ""
             self.salvar_conversa()
 
     def on_thread_finished(self) -> None:
-        """Se a thread morrer inesperadamente"""
         if self.gerando_resposta:
             self.gerando_resposta = False
+            self.chat_handler.esconder_digitando()
             self.chat_botao.setIcon(QIcon(f"{self.orig_dir}\\ícones\\seta_enviar.svg"))
             self.habilitar_controles()
             if self.buffer_resposta_bot:
@@ -198,66 +286,55 @@ class MinhaJanela(QWidget):
                 self.salvar_conversa()
 
     def salvar_conversa(self):
-        """Salva a conversa atual em JSON e atualiza a lista lateral"""
         novo_nome = funcs.salvar_conversa_json(self.historico_atual, self.nome_arquivo_atual)
         if novo_nome:
             self.nome_arquivo_atual = novo_nome
             self.atualizar_lista_conversas()
 
     def nova_conversa(self):
-        """Reseta o chat para uma nova conversa"""
         self.historico_atual = []
         self.nome_arquivo_atual = None
         self.buffer_resposta_bot = ""
         self.chat_handler.limpar_chat()
+        self.chat_handler.esconder_digitando()
 
         if self.thread and self.thread.isRunning():
             self.thread.stop_thread()
             self.thread.wait()
             self.thread.deleteLater()
             self.thread = None
-            self.gerando_resposta = False
-            self.chat_botao.setIcon(QIcon(f"{self.orig_dir}\\ícones\\seta_enviar.svg"))
-            self.habilitar_controles()
+
+        self.gerando_resposta = False
+        self.chat_botao.setIcon(QIcon(f"{self.orig_dir}\\ícones\\seta_enviar.svg"))
+        self.habilitar_controles()
 
     def recuperar_conversa(self, nome_arquivo: str) -> None:
-        """Carrega uma conversa do arquivo JSON"""
         dados = funcs.ler_conversa_json(nome_arquivo)
-        if not dados:
-            return
-
+        if not dados: return
         self.nova_conversa()
         self.historico_atual = dados
         self.nome_arquivo_atual = nome_arquivo
-
         for msg in self.historico_atual:
-            self.chat_handler.adicionar_html(msg['content'], msg['role'])
+            self.chat_handler.adicionar_html(msg['content'], msg['role'], streaming=False)
 
     def excluir_conversa(self, nome_arquivo: str) -> None:
-        """Exclui a conversa e atualiza a lista"""
         if funcs.excluir_conversa(nome_arquivo):
-            # Se a conversa excluída for a atual, limpa a tela
             if self.nome_arquivo_atual == nome_arquivo:
                 self.nova_conversa()
             self.atualizar_lista_conversas()
 
     def atualizar_lista_conversas(self):
-        """Recria os botões da barra lateral"""
         if hasattr(self, 'layout_lista_conversas'):
             while self.layout_lista_conversas.count():
                 item = self.layout_lista_conversas.takeAt(0)
-                if item.widget():
-                    item.widget().deleteLater()
+                if item.widget(): item.widget().deleteLater()
 
-            # --- BOTÃO NOVA CONVERSA (AGORA NO TOPO DA LISTA) ---
             btn_nova = QPushButton("Nova Conversa +")
-            # Estilo azulado para destacar
             btn_nova.setStyleSheet(estilos.estilo_botao_conversa().replace("rgb(180, 180, 180)", "rgb(173, 216, 230)"))
             btn_nova.clicked.connect(self.nova_conversa)
             self.layout_lista_conversas.addWidget(btn_nova)
             self.layout_lista_conversas.addSpacing(5)
 
-            # --- LISTA DE CONVERSAS SALVAS ---
             for conversa in funcs.listar_conversas():
                 caminho = os.path.join(os.getcwd(), "data", "conversas", conversa)
                 texto_botao = conversa.replace(".json", "").replace("_", " ")[:18]
@@ -269,33 +346,24 @@ class MinhaJanela(QWidget):
                 except:
                     pass
 
-                # Container horizontal para [Botão Conversa] [Botão Excluir]
                 container = QWidget()
                 layout_h = QHBoxLayout(container)
                 layout_h.setContentsMargins(0, 0, 0, 0)
                 layout_h.setSpacing(2)
 
-                # Botão da conversa
                 botao = QPushButton(texto_botao)
                 botao.clicked.connect(lambda checked, c=conversa: self.recuperar_conversa(c))
                 botao.setStyleSheet(estilos.estilo_botao_conversa())
 
-                # Botão de excluir
                 btn_del = QPushButton("X")
-                btn_del.setFixedSize(20, 30)  # Tamanho fixo pequeno
-                btn_del.setStyleSheet("""
-                    QPushButton {
-                        background-color: #ff6b6b; color: white; border: none; border-radius: 3px; font-weight: bold;
-                    }
-                    QPushButton:hover { background-color: #ff4c4c; }
-                """)
+                btn_del.setFixedSize(20, 30)
+                btn_del.setStyleSheet(
+                    "QPushButton { background-color: #ff6b6b; color: white; border: none; border-radius: 3px; font-weight: bold; } QPushButton:hover { background-color: #ff4c4c; }")
                 btn_del.clicked.connect(lambda checked, c=conversa: self.excluir_conversa(c))
 
                 layout_h.addWidget(botao)
                 layout_h.addWidget(btn_del)
-
                 self.layout_lista_conversas.addWidget(container)
-
             self.layout_lista_conversas.addStretch()
 
     def setup_ui(self):
@@ -303,6 +371,7 @@ class MinhaJanela(QWidget):
         self.chat_handler.orig_dir = self.orig_dir
 
         def click_botao_prompt() -> None:
+            # LÓGICA DE CANCELAMENTO
             if self.gerando_resposta:
                 if self.thread and self.thread.isRunning():
                     try:
@@ -311,43 +380,62 @@ class MinhaJanela(QWidget):
                         self.thread.finished.disconnect()
                     except:
                         pass
-
                     self.thread.stop_thread()
                     self.thread.wait()
                     self.thread.deleteLater()
                     self.thread = None
 
                 self.gerando_resposta = False
+                self.chat_handler.esconder_digitando()
                 self.chat_botao.setIcon(QIcon(f"{self.orig_dir}\\ícones\\seta_enviar.svg"))
 
                 msg_cancel = estilos.mensagem_operacao_cancelada()
-                self.chat_handler.adicionar_html(f"<br><i>{msg_cancel}</i>", 'bot', raw_html=True)
 
+                # Renderiza o que já foi gerado (sem misturar com o aviso)
+                if self.buffer_resposta_bot:
+                    # Renderiza o bot como finalizado (Markdown)
+                    self.chat_handler.adicionar_html(self.buffer_resposta_bot, 'bot', streaming=False)
+
+                    self.historico_atual.append({"role": "bot", "content": self.buffer_resposta_bot + " [Cancelado]"})
+
+                # Adiciona o aviso em uma div separada abaixo
+                self.chat_handler.adicionar_aviso(msg_cancel)
+
+                self.buffer_resposta_bot = ""
                 self.habilitar_controles()
                 return
 
+            # LÓGICA DE ENVIO
             texto = self.chat_prompt.toPlainText().strip()
-            if not texto:
-                return
+            if not texto: return
 
             self.gerando_resposta = True
             self.chat_botao.setIcon(QIcon(f"{self.orig_dir}\\ícones\\trabalhando.svg"))
             self.chat_botao.repaint()
-
             self.desabilitar_controles()
 
             self.historico_atual.append({"role": "user", "content": texto})
             self.buffer_resposta_bot = ""
+
+            self.chat_handler.adicionar_html(texto, 'user', streaming=False)
+            self.chat_handler.mostrar_digitando()
 
             if self.thread is None or not self.thread.isRunning():
                 modelo_selecionado = self.botao_modelo.currentText()
                 if not modelo_selecionado:
                     self.chat_tela.setHtml("<h3>Erro: Nenhum modelo selecionado.</h3>")
                     self.gerando_resposta = False
+                    self.chat_handler.esconder_digitando()
                     self.chat_botao.setIcon(QIcon(f"{self.orig_dir}\\ícones\\seta_enviar.svg"))
+                    self.habilitar_controles()
                     return
 
-                self.thread = PromptThread(modelo_selecionado)
+                try:
+                    temp_val = self.slider_temp.value() / 100.0
+                except:
+                    temp_val = 0.7
+
+                self.thread = PromptThread(modelo_selecionado, temperature=temp_val, n_experts=0)
                 self.thread.linha.connect(self.receber_parte_resposta)
                 self.thread.erro.connect(lambda e: print(f"Erro Thread: {e}"))
                 self.thread.sinal_resposta_finalizada.connect(self.on_resposta_finalizada)
@@ -423,6 +511,26 @@ class MinhaJanela(QWidget):
         self.chat_prompt.textChanged.connect(esconder_mostrar_botao)
         self.chat_prompt.installEventFilter(self)
 
+        self.chat_prompt.setStyleSheet("""
+           QTextEdit {
+               color: black;
+               background-color: white;
+               border: 2px solid #aaa; /* Borda mais evidente */
+               border-radius: 10px;
+               padding: 8px;
+               font-size: 14px;
+           }
+           QTextEdit:focus {
+               border: 2px solid #5c9eff; /* Destaque ao focar */
+           }
+       """)
+
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(15)
+        shadow.setColor(QColor(0, 0, 0, 50))
+        shadow.setOffset(0, 2)
+        self.chat_prompt.setGraphicsEffect(shadow)
+
         self.chat_botao = QPushButton()
         self.chat_botao.setIcon(QIcon(f"{os.getcwd()}\\ícones\\seta_enviar.svg"))
         self.chat_botao.setMinimumWidth(50)
@@ -445,32 +553,23 @@ class MinhaJanela(QWidget):
 
         self.botao_modelo.addItem("Adicionar modelo")
 
-        # --- LÓGICA DE TROCA DE MODELO ATUALIZADA ---
         def ao_trocar_modelo(index):
             texto_atual = self.botao_modelo.currentText()
-
             if texto_atual == "Adicionar modelo":
-                # Bloqueia sinais para não disparar eventos recursivos
                 self.botao_modelo.blockSignals(True)
-
                 novo_modelo = funcs.adicionar_modelo_gguf()
-
-                # Limpa e recarrega a lista
                 self.botao_modelo.clear()
                 modelos_atualizados = funcs.listar_modelos()
-                for m in modelos_atualizados:
-                    self.botao_modelo.addItem(m)
+                for m in modelos_atualizados: self.botao_modelo.addItem(m)
                 self.botao_modelo.addItem("Adicionar modelo")
-
                 if novo_modelo:
-                    # Seleciona o novo modelo
                     self.botao_modelo.setCurrentText(novo_modelo)
+                    self.nova_conversa()
                 else:
-                    # Se cancelou, volta para o primeiro da lista
-                    if self.botao_modelo.count() > 1:
-                        self.botao_modelo.setCurrentIndex(0)
-
+                    if self.botao_modelo.count() > 1: self.botao_modelo.setCurrentIndex(0)
                 self.botao_modelo.blockSignals(False)
+            else:
+                self.nova_conversa()
 
         self.botao_modelo.currentIndexChanged.connect(ao_trocar_modelo)
         self.botao_modelo.setMaximumWidth(600)
@@ -521,10 +620,35 @@ class MinhaJanela(QWidget):
         layout_sidebar.addWidget(menu)
         layout_sidebar.addSpacing(15)
 
-        # REMOVIDO DAQUI O BOTÃO DE NOVA CONVERSA - AGORA ESTÁ EM atualizar_lista_conversas
+        lbl_temp = QLabel("Temperatura")
+        lbl_temp.setStyleSheet(estilos.estilo_titulo_quantidade_tokens_arquivo())
+        layout_sidebar.addWidget(lbl_temp)
+
+        self.slider_temp = QSlider(Qt.Orientation.Horizontal)
+        self.slider_temp.setMinimum(0)
+        self.slider_temp.setMaximum(500)
+        self.slider_temp.setValue(70)
+
+        self.mostrador_temp = QTextEdit()
+        self.mostrador_temp.setReadOnly(True)
+        self.mostrador_temp.setMaximumHeight(22)
+        self.mostrador_temp.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.mostrador_temp.setText("0.70")
+        self.mostrador_temp.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.mostrador_temp.setStyleSheet(estilos.estilo_mostrar_quantidade_tokens_arquivo())
+
+        def atualizar_temp(valor):
+            temp_float = valor / 100.0
+            self.mostrador_temp.setText(f"{temp_float:.2f}")
+            self.mostrador_temp.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.slider_temp.valueChanged.connect(atualizar_temp)
+        layout_sidebar.addWidget(self.slider_temp)
+        layout_sidebar.addWidget(self.mostrador_temp)
+        layout_sidebar.addSpacing(15)
 
         quantidade_tokens_arquivo = QVBoxLayout()
-        titulo_tokens = QLabel("Quantidade de tokens")
+        titulo_tokens = QLabel("Limite de Tokens")
         titulo_tokens.setAlignment(Qt.AlignmentFlag.AlignCenter)
         titulo_tokens.setStyleSheet(estilos.estilo_titulo_quantidade_tokens_arquivo())
         titulo_tokens.setMaximumHeight(20)
