@@ -78,19 +78,26 @@ class ChatHandler:
         if not self.chat_tela: return
 
         js_content = json.dumps(html_aviso)
+        # Agora usamos as classes de bot ('msg-wrapper bot-wrapper' e 'msg bot')
+        # para que o aviso tenha o mesmo formato de balão, mantendo o conteúdo vermelho.
         js = f"""
         (function() {{
             var chat = document.getElementById('chat');
-            var div = document.createElement('div');
-            div.style.width = '100%';
-            div.style.marginBottom = '10px';
-            div.innerHTML = {js_content};
+
+            var wrapper = document.createElement('div');
+            wrapper.className = 'msg-wrapper bot-wrapper'; // Estilo de posicionamento do bot
+
+            var msg = document.createElement('div');
+            msg.className = 'msg bot'; // Estilo visual da bolha do bot
+            msg.innerHTML = {js_content};
+
+            wrapper.appendChild(msg);
 
             // Remove typing se existir antes de adicionar o aviso
             var typing = document.getElementById('typing_indicator');
             if(typing) typing.remove();
 
-            chat.appendChild(div);
+            chat.appendChild(wrapper);
             window.scrollTo(0, document.body.scrollHeight);
         }})();
         """
@@ -511,6 +518,10 @@ class MinhaJanela(QWidget):
         self.chat_prompt.textChanged.connect(esconder_mostrar_botao)
         self.chat_prompt.installEventFilter(self)
 
+        # --- ATUALIZAÇÃO DO ESTILO DA BARRA DE PROMPT (FIX COLAR TEXTO) ---
+        # acceptRichText(False) garante que colar texto não traga formatação indesejada (negrito, fontes, etc)
+        self.chat_prompt.setAcceptRichText(False)
+
         self.chat_prompt.setStyleSheet("""
            QTextEdit {
                color: black;
@@ -525,9 +536,10 @@ class MinhaJanela(QWidget):
            }
        """)
 
+        # --- ADIÇÃO DA SOMBRA (Drop Shadow Effect) ---
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(15)
-        shadow.setColor(QColor(0, 0, 0, 50))
+        shadow.setColor(QColor(0, 0, 0, 50))  # Sombra preta com transparência
         shadow.setOffset(0, 2)
         self.chat_prompt.setGraphicsEffect(shadow)
 
@@ -564,11 +576,12 @@ class MinhaJanela(QWidget):
                 self.botao_modelo.addItem("Adicionar modelo")
                 if novo_modelo:
                     self.botao_modelo.setCurrentText(novo_modelo)
-                    self.nova_conversa()
+                    self.nova_conversa()  # Reseta se adicionou
                 else:
                     if self.botao_modelo.count() > 1: self.botao_modelo.setCurrentIndex(0)
                 self.botao_modelo.blockSignals(False)
             else:
+                # Reseta a conversa ao trocar de modelo
                 self.nova_conversa()
 
         self.botao_modelo.currentIndexChanged.connect(ao_trocar_modelo)
