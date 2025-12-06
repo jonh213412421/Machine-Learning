@@ -8,22 +8,22 @@ os.environ['QT_OPENGL'] = 'angle'
 import json
 import funcs
 from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QEvent
-from PyQt6.QtGui import QIcon, QFont, QShortcut, QKeySequence, QColor
+from PyQt6.QtGui import QIcon, QFont, QShortcut, QKeySequence, QColor, QPixmap, QTransform
 from PyQt6.QtWidgets import QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QComboBox, QTextEdit, \
-    QFrame, QSlider, QGraphicsDropShadowEffect
+    QFrame, QSlider, QGraphicsDropShadowEffect, QSizePolicy, QLineEdit
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 import janelas
 import estilos
 from threads import PromptThread, CarregarArquivoThread
 
-# Tenta importar markdown, fallback se não existir
+# Tenta importar markdown com segurança
 try:
     import markdown
 
     TEM_MARKDOWN = True
 except ImportError:
     TEM_MARKDOWN = False
-    print("Aviso: Biblioteca 'markdown' não encontrada. Usando texto simples.")
+    print("AVISO: Biblioteca 'markdown' não encontrada. Instale com 'pip install markdown' para formatação correta.")
 
 
 class ChatHandler:
@@ -40,42 +40,150 @@ class ChatHandler:
             self.chat_botao.setIcon(QIcon(f"{self.orig_dir}\\ícones\\seta_enviar.svg"))
             self.chat_botao.setEnabled(True)
 
-    def formatar_texto(self, texto: str) -> str:
-        # Limpeza de artefatos do modelo
-        texto = re.sub(r'^(system|user|assistant|analysis)+', '', texto, flags=re.IGNORECASE | re.MULTILINE)
-        texto = re.sub(r'^(#+)([^ \n])', r'\1 \2', texto, flags=re.MULTILINE)
-        texto = re.sub(r'-{2,}#{2,}', '\n\n', texto)
+    def formatar_texto(self, texto: str, limpar_artefatos: bool = True) -> str:
+        """
+        Formata o texto para HTML/Markdown.
+        :param texto: O texto a ser formatado.
+        :param limpar_artefatos: Se True, remove saudações e artefatos de IA (usar apenas para o Bot).
+        """
+        texto_limpo = texto
 
+        # 1. Limpeza de artefatos (Garbage Collection Refinada) - APENAS SE SOLICITADO
+        if limpar_artefatos:
+            def limpar_recursivo(t):
+                # Remove saudações, roles e lixo comum de início de resposta
+                padrao = r'^[\s\W]*(?:Hello|Hi|Olá|Oi|Saudações|Claro|Certo|Aqui está|Abaixo|system|user|assistant|analysis|model|context|###|[:\-]|\d+\/)+'
+                novo_t = re.sub(padrao, '', t, flags=re.IGNORECASE).strip()
+                return novo_t
+
+            for _ in range(10):
+                temp = limpar_recursivo(texto_limpo)
+                if temp == texto_limpo:
+                    break
+                texto_limpo = temp
+            texto = texto_limpo
+
+        # 2. Normalização básica pré-processamento
+        texto = re.sub(r'^(#+)([^ \n])', r'\1 \2', texto, flags=re.MULTILINE)  # Headers
+        texto = re.sub(r'-{2,}\s*#{2,}', '\n\n', texto)  # Separadores ruins
+        texto = texto.replace("||", "|\n|")  # Quebra de linhas de tabela coladas
+
+        # 3. Processamento de Blocos (Máquina de Estados para Tabelas)
+        lines = texto.splitlines()
+        processed_lines = []
+        in_table = False
+
+        # Regex simples para identificar se a linha tem cara de tabela (tem pelo menos um pipe)
+        table_row_pattern = re.compile(r'\|')
+
+        for line in lines:
+            line = line.strip()
+
+            # Se a linha está vazia
+            if not line:
+                if in_table:
+                    continue  # Ignora (remove) linhas vazias DENTRO de tabelas para compactar
+                else:
+                    processed_lines.append('')  # Mantém linhas vazias fora
+                continue
+
+            # Verifica se é linha de tabela (e ignora blocos de código )
+            is_table_row = table_row_pattern.search(line) and not line.startswith('')
+
+            if is_table_row:
+                # Normaliza pipes nas bordas (Obrigatório para o parser)
+                if not line.startswith('|'): line = '| ' + line
+                if not line.endswith('|'): line = line + ' |'
+
+                if not in_table:
+                    # Entrando no modo tabela
+                    in_table = True
+                    # Garante linha em branco antes da tabela (Requisito do Markdown)
+                    if processed_lines and processed_lines[-1] != '':
+                        processed_lines.append('')
+
+                processed_lines.append(line)
+            else:
+                if in_table:
+                    # Saindo do modo tabela
+                    in_table = False
+                    processed_lines.append('')  # Garante separação ao sair
+
+                processed_lines.append(line)
+
+        texto = '\n'.join(processed_lines)
+
+        # 4. Ajustes finais e Conversão
         if TEM_MARKDOWN:
             try:
-                html = markdown.markdown(texto, extensions=['tables', 'fenced_code', 'nl2br'])
-                return html
-            except Exception as e:
-                print(f"Erro markdown: {e}")
+                # Usa extensões essenciais
+                html = markdown.markdown(texto, extensions=['tables', 'fenced_code', 'nl2br', 'sane_lists'])
 
-        # Fallback simples
+                # CSS Injetado (Estilo Limpo e Profissional)
+                estilo_css = """
+                <style>
+                    table {
+                        border-collapse: collapse;
+                        width: 100%;
+                        margin: 1rem 0;
+                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+                        font-size: 14px;
+                        line-height: 1.5;
+                        color: #24292e;
+                        border: 1px solid #dfe2e5;
+                        background-color: #fff;
+                    }
+                    thead {
+                        display: table-header-group;
+                        vertical-align: middle;
+                        border-color: inherit;
+                    }
+                    tr {
+                        background-color: #fff;
+                        border-top: 1px solid #c6cbd1;
+                    }
+                    tr:nth-child(2n) {
+                        background-color: #f6f8fa;
+                    }
+                    th, td {
+                        padding: 8px 13px;
+                        border: 1px solid #dfe2e5;
+                        text-align: left;
+                    }
+                    th {
+                        font-weight: 600;
+                        background-color: #f3f4f4;
+                    }
+                </style>
+                """
+                return estilo_css + html
+            except Exception as e:
+                print(f"Erro Markdown: {e}")
+
         return texto.replace("\n", "<br>")
 
     def mostrar_digitando(self):
         if not self.chat_tela: return
 
-        # Cria ou move os pontinhos para o final
         js = """
-        var chat = document.getElementById('chat');
-        var existing = document.getElementById('typing_indicator');
-        if (existing) {
-            chat.appendChild(existing); // Move para o final
-        } else {
+        (function() {
+            var chat = document.getElementById('chat');
+            if (!chat) return;
+
+            var old = document.getElementById('typing_indicator');
+            if (old) old.remove();
+
             var wrapper = document.createElement('div');
             wrapper.id = 'typing_indicator';
             wrapper.className = 'msg-wrapper bot-wrapper';
             var msg = document.createElement('div');
             msg.className = 'msg bot';
             msg.innerHTML = '<div class="typing"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>';
+
             wrapper.appendChild(msg);
             chat.appendChild(wrapper);
-        }
-        window.scrollTo(0, document.body.scrollHeight);
+            window.scrollTo(0, document.body.scrollHeight);
+        })();
         """
         self.chat_tela.page().runJavaScript(js)
 
@@ -89,12 +197,16 @@ class ChatHandler:
 
         js_content = json.dumps(html_aviso)
         js = f"""
+        (function() {{
             var chat = document.getElementById('chat');
+            if (!chat) return;
+
             var typing = document.getElementById('typing_indicator');
             if(typing) typing.remove();
 
             var wrapper = document.createElement('div');
-            wrapper.className = 'msg-wrapper bot-wrapper';
+            wrapper.className = 'msg-wrapper bot-wrapper'; 
+
             var msg = document.createElement('div');
             msg.className = 'msg bot'; 
             msg.innerHTML = {js_content};
@@ -102,6 +214,7 @@ class ChatHandler:
             wrapper.appendChild(msg);
             chat.appendChild(wrapper);
             window.scrollTo(0, document.body.scrollHeight);
+        }})();
         """
         self.chat_tela.page().runJavaScript(js)
 
@@ -111,22 +224,22 @@ class ChatHandler:
         if raw_html:
             texto_final = texto
         else:
-            # Se for user ou streaming, texto simples (rápido). Se for bot final, Markdown.
-            if (remetente == 'user' or streaming) and not TEM_MARKDOWN:
-                # Limpeza básica para streaming
+            if remetente == 'bot':
+                texto_final = self.formatar_texto(texto, limpar_artefatos=True)
+            elif remetente == 'user':
+                texto_final = self.formatar_texto(texto, limpar_artefatos=False)
+            else:
                 texto_limpo = re.sub(r'^(system|user|assistant)+', '', texto, flags=re.IGNORECASE)
                 texto_final = (texto_limpo.replace("&", "&amp;")
                                .replace("<", "&lt;")
                                .replace(">", "&gt;")
                                .replace("\n", "<br>"))
-            else:
-                texto_final = self.formatar_texto(texto)
 
         js_content = json.dumps(texto_final)
-
         js_scroll = "window.scrollTo(0, document.body.scrollHeight);"
 
         js_mathjax = ""
+        # MathJax só roda na mensagem final do bot
         if not streaming and remetente == 'bot':
             js_mathjax = "if(window.MathJax && typeof msg_div !== 'undefined') { MathJax.typesetPromise([msg_div]).then(() => " + js_scroll + "); }"
 
@@ -137,9 +250,11 @@ class ChatHandler:
             self.div_bot_criada = False
             self.j += 1
 
-            # JS simplificado: Cria user, depois move typing para baixo
             js = f"""
+            (function() {{
                 var chat = document.getElementById('chat');
+                if (!chat) return;
+
                 var wrapper = document.createElement('div');
                 wrapper.id = '{wrapper_id}';
                 wrapper.className = '{wrapper_class} msg-wrapper';
@@ -150,22 +265,23 @@ class ChatHandler:
                 chat.appendChild(wrapper);
 
                 var typing = document.getElementById('typing_indicator');
-                if (typing) chat.appendChild(typing); // Move para o final
+                if (typing) chat.appendChild(typing);
 
                 {js_scroll}
+            }})();
             """
 
         else:  # BOT
             if not self.div_bot_criada:
-                # CRIAR NOVA
                 wrapper_id = f"msg_{self.j}"
                 self.div_bot_criada = True
                 self.j += 1
 
                 js = f"""
+                (function() {{
                     var chat = document.getElementById('chat');
+                    if (!chat) return;
 
-                    // Cria bot msg
                     var wrapper = document.createElement('div');
                     wrapper.id = '{wrapper_id}';
                     wrapper.className = 'bot-wrapper msg-wrapper';
@@ -176,11 +292,9 @@ class ChatHandler:
                     wrapper.appendChild(msg);
                     chat.appendChild(wrapper);
 
-                    // Garante que typing vá para o final se existir
                     var typing = document.getElementById('typing_indicator');
                     if (typing) chat.appendChild(typing);
                     else if ({str(streaming).lower()}) {{
-                        // Se não existe e é streaming, cria
                         var tWrap = document.createElement('div');
                         tWrap.id = 'typing_indicator';
                         tWrap.className = 'msg-wrapper bot-wrapper';
@@ -190,12 +304,13 @@ class ChatHandler:
 
                     {js_mathjax}
                     if (!window.MathJax) {{ {js_scroll} }}
+                }})();
                 """
             else:
-                # ATUALIZAR
                 prev_id = f"msg_{self.j - 1}"
 
                 js = f"""
+                (function() {{
                     var wrapper = document.getElementById('{prev_id}');
                     if (wrapper) {{
                         var msg_div = wrapper.querySelector('.bot');
@@ -203,11 +318,23 @@ class ChatHandler:
 
                         var chat = document.getElementById('chat');
                         var typing = document.getElementById('typing_indicator');
-                        if (typing) chat.appendChild(typing); // Mantém no final
+
+                        if ({str(streaming).lower()}) {{
+                             if (!typing) {{
+                                 var tWrap = document.createElement('div');
+                                 tWrap.id = 'typing_indicator';
+                                 tWrap.className = 'msg-wrapper bot-wrapper';
+                                 tWrap.innerHTML = '<div class="msg bot"><div class="typing"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div></div>';
+                                 chat.appendChild(tWrap);
+                             }} else if (chat.lastElementChild !== typing) {{
+                                 chat.appendChild(typing);
+                             }}
+                        }}
 
                         {js_mathjax}
                         if (!window.MathJax) {{ {js_scroll} }}
                     }}
+                }})();
                 """
 
         self.chat_tela.page().runJavaScript(js)
@@ -232,7 +359,8 @@ class MinhaJanela(QWidget):
         self.buffer_resposta_bot = ""
 
         self.setWindowTitle("PyChatBot")
-        self.setFixedSize(1024, 800)
+        self.setMinimumSize(900, 700)
+        self.resize(1024, 800)
         self.setup_ui()
 
     def eventFilter(self, source, event):
@@ -307,6 +435,9 @@ class MinhaJanela(QWidget):
         self.chat_botao.setIcon(QIcon(f"{self.orig_dir}\\ícones\\seta_enviar.svg"))
         self.habilitar_controles()
 
+        if hasattr(self, 'botao_parar'):
+            self.botao_parar.setVisible(False)
+
     def recuperar_conversa(self, nome_arquivo: str) -> None:
         dados = funcs.ler_conversa_json(nome_arquivo)
         if not dados: return
@@ -370,7 +501,6 @@ class MinhaJanela(QWidget):
         self.chat_handler.orig_dir = self.orig_dir
 
         def click_botao_prompt() -> None:
-            # LÓGICA DE CANCELAMENTO
             if self.gerando_resposta:
                 if self.thread and self.thread.isRunning():
                     try:
@@ -399,7 +529,6 @@ class MinhaJanela(QWidget):
                 self.habilitar_controles()
                 return
 
-            # LÓGICA DE ENVIO
             texto = self.chat_prompt.toPlainText().strip()
             if not texto: return
 
@@ -436,6 +565,8 @@ class MinhaJanela(QWidget):
                 self.thread.finished.connect(self.on_thread_finished)
                 self.thread.start()
 
+                self.botao_parar.setVisible(True)
+
             self.thread.enviar_prompt(texto)
             self.chat_prompt.clear()
 
@@ -453,7 +584,8 @@ class MinhaJanela(QWidget):
             try:
                 nome_arquivo, dados_arquivo = funcs.carregar_arquivo()
                 if nome_arquivo:
-                    self.arquivo_carregado.setHtml(nome_arquivo)
+                    # ALTERADO DE setHtml PARA setText
+                    self.arquivo_carregado.setText(nome_arquivo)
                     self.arquivo_carregado.setAlignment(Qt.AlignmentFlag.AlignCenter)
             except Exception as e:
                 print(f"Erro ao carregar arquivo: {e}")
@@ -463,48 +595,43 @@ class MinhaJanela(QWidget):
             if self.sidebar_estendida:
                 destino = 0
                 self.sidebar_estendida = False
-                self.chat_prompt.setMinimumWidth(900)
-                self.animacao = QPropertyAnimation(self.chat_prompt, b"maximumWidth")
-                self.animacao.setDuration(300)
-                self.animacao.setStartValue(width_atual)
-                self.animacao.setEndValue(destino)
-                self.animacao.setEasingCurve(QEasingCurve.Type.InOutBack)
-                self.animacao.start()
+                self.animacao_sidebar = QPropertyAnimation(sidebar, b"maximumWidth")
+                self.animacao_sidebar.setDuration(300)
+                self.animacao_sidebar.setStartValue(width_atual)
+                self.animacao_sidebar.setEndValue(destino)
+                self.animacao_sidebar.setEasingCurve(QEasingCurve.Type.InOutBack)
+                self.animacao_sidebar.start()
                 maximizador_menu.setIcon(QIcon(f"{self.orig_dir}\\ícones\\expansão_menu.svg"))
             else:
                 destino = 200
                 self.sidebar_estendida = True
-                self.chat_prompt.setMinimumWidth(700)
-                self.animacao = QPropertyAnimation(self.chat_prompt, b"maximumWidth")
-                self.animacao.setDuration(300)
-                self.animacao.setStartValue(width_atual)
-                self.animacao.setEndValue(destino)
-                self.animacao.setEasingCurve(QEasingCurve.Type.InOutCubic)
-                self.animacao.start()
-                maximizador_menu.setIcon(QIcon(f"{self.orig_dir}\\ícones\\minimização_menu.svg"))
+                self.animacao_sidebar = QPropertyAnimation(sidebar, b"maximumWidth")
+                self.animacao_sidebar.setDuration(300)
+                self.animacao_sidebar.setStartValue(width_atual)
+                self.animacao_sidebar.setEndValue(destino)
+                self.animacao_sidebar.setEasingCurve(QEasingCurve.Type.InOutCubic)
+                self.animacao_sidebar.start()
 
-            self.animacao_sidebar = QPropertyAnimation(sidebar, b"maximumWidth")
-            self.animacao_sidebar.setDuration(300)
-            self.animacao_sidebar.setStartValue(width_atual)
-            self.animacao_sidebar.setEndValue(destino)
-            self.animacao_sidebar.setEasingCurve(QEasingCurve.Type.InOutCubic)
-            self.animacao_sidebar.start()
+                # Inverte o ícone para indicar recolhimento (espelha horizontalmente)
+                icon_base = QIcon(f"{self.orig_dir}\\ícones\\expansão_menu.svg")
+                pixmap = icon_base.pixmap(64, 64)
+                transformed_pixmap = pixmap.transformed(QTransform().scale(-1, 1))
+                maximizador_menu.setIcon(QIcon(transformed_pixmap))
 
         self.chat_tela = QWebEngineView()
         self.chat_tela.setStyleSheet(estilos.estilo_chat_tela())
         self.chat_tela.setMinimumHeight(300)
-        self.chat_tela.setMaximumHeight(700)
         self.chat_tela.setHtml(estilos.html_base())
         self.chat_handler.chat_tela = self.chat_tela
 
         self.prompt_barra = QHBoxLayout()
+        self.prompt_barra.setSpacing(5)
+
         self.chat_prompt = QTextEdit()
         self.chat_prompt.setMaximumHeight(40)
-        self.chat_prompt.setMinimumWidth(900)
         self.chat_prompt.setFont(QFont("Arial", 12))
         self.chat_prompt.textChanged.connect(esconder_mostrar_botao)
         self.chat_prompt.installEventFilter(self)
-
         self.chat_prompt.setAcceptRichText(False)
 
         self.chat_prompt.setStyleSheet("""
@@ -537,8 +664,8 @@ class MinhaJanela(QWidget):
         self.chat_botao.setVisible(False)
         self.chat_handler.chat_botao = self.chat_botao
 
-        self.prompt_barra.addWidget(self.chat_prompt, alignment=Qt.AlignmentFlag.AlignLeft, stretch=2)
-        self.prompt_barra.addWidget(self.chat_botao, alignment=Qt.AlignmentFlag.AlignLeft, stretch=1)
+        self.prompt_barra.addWidget(self.chat_prompt, stretch=1)
+        self.prompt_barra.addWidget(self.chat_botao, stretch=0)
 
         self.botao_modelo = QComboBox()
         try:
@@ -570,30 +697,62 @@ class MinhaJanela(QWidget):
         self.botao_modelo.currentIndexChanged.connect(ao_trocar_modelo)
         self.botao_modelo.setMaximumWidth(600)
         self.botao_modelo.setMinimumWidth(250)
-        self.botao_modelo.setMinimumHeight(20)
-        self.botao_modelo.setMaximumHeight(40)
+        self.botao_modelo.setMinimumHeight(35)
+        self.botao_modelo.setMaximumHeight(50)
         self.botao_modelo.setStyleSheet(estilos.estilo_botao_modelos())
+
+        # --- BOTÃO PARAR MODELO ---
+        self.botao_parar = QPushButton("Parar Modelo")
+        self.botao_parar.setMinimumHeight(35)
+        self.botao_parar.setMaximumHeight(50)
+        self.botao_parar.setMinimumWidth(250)
+        self.botao_parar.setMaximumWidth(600)
+
+        self.botao_parar.setStyleSheet("""
+           QPushButton {
+               background-color: #ffcccc; 
+               border: 1px solid #ff8888; 
+               border-radius: 10px; 
+               color: #330000;
+               font-family: Segoe UI;
+               font-size: 12px;
+               font-weight: bold;
+               padding: 5px;
+           }
+           QPushButton:hover { background-color: #ffaaaa; }
+           QPushButton:pressed { background-color: #ff8888; }
+       """)
+        self.botao_parar.clicked.connect(self.nova_conversa)
+        self.botao_parar.setVisible(False)
 
         self.botao_arquivo = QPushButton("Carregar Arquivo")
         self.botao_arquivo.setMaximumWidth(200)
-        self.botao_arquivo.setMinimumWidth(100)
-        self.botao_arquivo.setMinimumHeight(20)
-        self.botao_arquivo.setMaximumHeight(40)
+        self.botao_arquivo.setMinimumWidth(120)  # Leve aumento na largura
+        self.botao_arquivo.setMinimumHeight(35)  # AUMENTADO de 20 para 35
+        self.botao_arquivo.setMaximumHeight(50)  # AUMENTADO de 40 para 50
         self.botao_arquivo.setStyleSheet(estilos.estilo_botao_arquivo())
         self.botao_arquivo.clicked.connect(carregar_arquivo)
 
-        self.arquivo_carregado = QTextEdit()
+        # --- MODIFICAÇÃO: SUBSTITUÍDO QTextEdit POR QLineEdit PARA ARREDONDAMENTO CORRETO ---
+        self.arquivo_carregado = QLineEdit()
         self.arquivo_carregado.setReadOnly(True)
-        self.arquivo_carregado.setHtml("Nenhum arquivo carregado")
+        self.arquivo_carregado.setText("Nenhum arquivo carregado")
         self.arquivo_carregado.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.arquivo_carregado.setStyleSheet(estilos.estilo_arquivo_carregado())
         self.arquivo_carregado.setMaximumWidth(200)
-        self.arquivo_carregado.setMinimumWidth(100)
-        self.arquivo_carregado.setMinimumHeight(20)
-        self.arquivo_carregado.setMaximumHeight(40)
+        self.arquivo_carregado.setMinimumWidth(120)
+        self.arquivo_carregado.setMinimumHeight(35)
+        self.arquivo_carregado.setMaximumHeight(50)
+
+        # --- LAYOUT MODELOS + PARAR ---
+        layout_modelo_vertical = QVBoxLayout()
+        layout_modelo_vertical.setSpacing(10)
+        layout_modelo_vertical.setContentsMargins(0, 0, 0, 0)
+        layout_modelo_vertical.addWidget(self.botao_modelo)
+        layout_modelo_vertical.addWidget(self.botao_parar)
 
         layout_inferior = QHBoxLayout()
-        layout_inferior.addWidget(self.botao_modelo)
+        layout_inferior.addLayout(layout_modelo_vertical)
         layout_inferior.addWidget(self.botao_arquivo)
         layout_inferior.addWidget(self.arquivo_carregado)
 
@@ -662,7 +821,11 @@ class MinhaJanela(QWidget):
         mostrador_tokens.setAlignment(Qt.AlignmentFlag.AlignCenter)
         mostrador_tokens.setStyleSheet(estilos.estilo_mostrar_quantidade_tokens_arquivo())
 
-        slider_tokens.valueChanged.connect(lambda v: mostrador_tokens.setText(str(v)))
+        def atualizar_tokens(v):
+            mostrador_tokens.setText(str(v))
+            mostrador_tokens.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        slider_tokens.valueChanged.connect(lambda v: atualizar_tokens(v))
 
         quantidade_tokens_arquivo.addWidget(titulo_tokens)
         quantidade_tokens_arquivo.addWidget(slider_tokens)
