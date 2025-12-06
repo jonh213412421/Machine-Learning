@@ -186,7 +186,7 @@ def estilo_botao_arquivo() -> str:
                border: none;
                border-radius: 20px;
                margin: 0px;
-               padding: 0px;
+               padding: 5px 10px; /* Padding ajustado para visual melhor */
            }
            QPushButton:pressed {
                background-color: rgb(230, 230, 230);    
@@ -219,14 +219,16 @@ def estilo_resposta_prompt_thread(linha) -> str:
 
 
 def estilo_arquivo_carregado() -> str:
+    # ALTERADO PARA QLineEdit E AJUSTADO PARA COR DE FUNDO UNIFORME
     estilo = """
-           QTextEdit {
+           QLineEdit {
                font-family: Segoe UI;
-               font-size: 14px;
+               font-size: 12px;
                background-color: #DEE6EE; 
+               color: #333;
                border: none;
-               padding: 0px;
-               border-radius: 20px;
+               padding: 0px 10px;
+               border-radius: 17px; /* Arredondamento para formato de pílula (metade da altura de 35px) */
            }"""
     return estilo
 
