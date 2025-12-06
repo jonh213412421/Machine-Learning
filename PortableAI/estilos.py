@@ -36,31 +36,40 @@ def html_base() -> str:
             flex-direction: column;
         }
 
-        /* ESTILO PARA TABELAS */
+        /* --- ESTILO PARA TABELAS (MARKDOWN) --- */
         table {
             border-collapse: collapse;
             width: 100%;
-            margin: 15px 0;
+            margin: 1rem 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
             font-size: 14px;
-            background-color: white;
+            line-height: 1.5;
+            color: #24292e;
+            border: 1px solid #dfe2e5;
+            background-color: #fff;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
+        thead {
+            display: table-header-group;
+            vertical-align: middle;
+            border-color: inherit;
+        }
+        tr {
+            background-color: #fff;
+            border-top: 1px solid #c6cbd1;
+        }
+        tr:nth-child(2n) {
+            background-color: #f6f8fa;
+        }
+        th, td {
+            padding: 8px 13px;
+            border: 1px solid #dfe2e5;
+            text-align: left;
+        }
         th {
-            background-color: #f2f2f2;
+            font-weight: 600;
+            background-color: #f3f4f4;
             color: #333;
-            font-weight: bold;
-            text-align: left;
-            padding: 10px;
-            border: 1px solid #ddd;
-        }
-        td {
-            padding: 8px 10px;
-            border: 1px solid #ddd;
-            text-align: left;
-            color: #444;
-        }
-        tr:nth-child(even) {
-            background-color: #fafafa;
         }
         tr:hover {
             background-color: #f1f1f1;
@@ -107,6 +116,7 @@ def html_base() -> str:
             font-size: 16px;
             text-align: left;
             line-height: 1.6;
+            color: #222; /* Garante visibilidade */
         }
 
         .bot-wrapper { justify-content: flex-start; }
@@ -219,7 +229,7 @@ def estilo_resposta_prompt_thread(linha) -> str:
 
 
 def estilo_arquivo_carregado() -> str:
-    # ALTERADO PARA QLineEdit E AJUSTADO PARA COR DE FUNDO UNIFORME
+    # ALTERADO: Tamanho da fonte ajustado para 12px
     estilo = """
            QLineEdit {
                font-family: Segoe UI;
@@ -228,7 +238,7 @@ def estilo_arquivo_carregado() -> str:
                color: #333;
                border: none;
                padding: 0px 10px;
-               border-radius: 17px; /* Arredondamento para formato de pílula (metade da altura de 35px) */
+               border-radius: 17px; 
            }"""
     return estilo
 
