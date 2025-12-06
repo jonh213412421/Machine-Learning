@@ -98,7 +98,7 @@ def carregar_arquivo():
     return None, None
 
 
-# --- FUNÇÕES DE CONVERSA ---
+# --- FUNÇÕES DE CONVERSA (TEXTO PLANO) ---
 
 def garantir_pasta_conversas():
     path = os.path.join(os.getcwd(), "data", "conversas")
@@ -108,9 +108,10 @@ def garantir_pasta_conversas():
 
 
 def listar_conversas():
-    """Lista arquivos .json na pasta de conversas, ordenados por modificação"""
+    """Lista arquivos .txt na pasta de conversas, ordenados por modificação"""
     path = garantir_pasta_conversas()
-    arquivos = [f for f in os.listdir(path) if f.endswith(".json")]
+    # Mudança: busca arquivos .txt em vez de .json
+    arquivos = [f for f in os.listdir(path) if f.endswith(".txt")]
     arquivos.sort(key=lambda x: os.path.getmtime(os.path.join(path, x)), reverse=True)
     return arquivos
 
@@ -124,11 +125,12 @@ def gerar_nome_conversa(primeira_mensagem):
     if not nome_seguro:
         nome_seguro = "conversa_sem_titulo"
 
-    return f"{nome_seguro}.json"
+    # Mudança: extensão .txt
+    return f"{nome_seguro}.txt"
 
 
-def salvar_conversa_json(historico, nome_arquivo=None):
-    """Salva o histórico (lista de dicts) em um arquivo JSON"""
+def salvar_conversa_txt(historico, nome_arquivo=None):
+    """Salva o histórico (lista de dicts) em um arquivo TXT corrido"""
     path = garantir_pasta_conversas()
 
     if not nome_arquivo:
@@ -140,22 +142,48 @@ def salvar_conversa_json(historico, nome_arquivo=None):
 
     caminho_completo = os.path.join(path, nome_arquivo)
 
+    # Lógica de escrita para TXT usando linhas
+    # Formato:
+    # ROLE
+    # CONTEUDO (com quebras de linha substituídas por __BR__)
+    linhas = []
+    for msg in historico:
+        role = msg.get('role', 'unknown')
+        content = msg.get('content', '')
+        # Sanitiza quebras de linha para manter a estrutura de 1 linha por item
+        content_safe = content.replace('\n', '__BR__')
+
+        linhas.append(f"{role}\n")
+        linhas.append(f"{content_safe}\n")
+
     with open(caminho_completo, 'w', encoding='utf-8') as f:
-        json.dump(historico, f, ensure_ascii=False, indent=2)
+        f.writelines(linhas)
 
     return nome_arquivo
 
 
-def ler_conversa_json(nome_arquivo):
-    """Lê um arquivo JSON e retorna a lista de mensagens"""
+def ler_conversa_txt(nome_arquivo):
+    """Lê um arquivo TXT e retorna a lista de mensagens usando readlines"""
     path = garantir_pasta_conversas()
     caminho_completo = os.path.join(path, nome_arquivo)
 
+    historico = []
     if os.path.exists(caminho_completo):
         try:
             with open(caminho_completo, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except:
+                lines = f.readlines()
+
+            # Processa de 2 em 2 linhas (Role + Content)
+            for i in range(0, len(lines), 2):
+                if i + 1 < len(lines):
+                    role = lines[i].strip()
+                    # Recupera as quebras de linha originais
+                    content = lines[i + 1].strip().replace('__BR__', '\n')
+                    historico.append({'role': role, 'content': content})
+
+            return historico
+        except Exception as e:
+            print(f"Erro ao ler conversa txt: {e}")
             return []
     return []
 
