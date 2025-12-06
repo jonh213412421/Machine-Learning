@@ -50,64 +50,55 @@ class ChatHandler:
 
         # 1. Limpeza de artefatos (Garbage Collection Refinada) - APENAS SE SOLICITADO
         if limpar_artefatos:
-            def limpar_recursivo(t):
-                # Remove saudações, roles e lixo comum de início de resposta
-                padrao = r'^[\s\W]*(?:Hello|Hi|Olá|Oi|Saudações|Claro|Certo|Aqui está|Abaixo|system|user|assistant|analysis|model|context|###|[:\-]|\d+\/)+'
-                novo_t = re.sub(padrao, '', t, flags=re.IGNORECASE).strip()
-                return novo_t
+            # REGEX CORRIGIDO: Remove apenas rótulos específicos
+            padrao_roles = r'^[\s\r\n]*(?:system|user|assistant|analysis|model|context)(?:\s*[:\-])?\s*'
+            texto_limpo = re.sub(padrao_roles, '', texto_limpo, flags=re.IGNORECASE)
 
-            for _ in range(10):
-                temp = limpar_recursivo(texto_limpo)
-                if temp == texto_limpo:
-                    break
-                texto_limpo = temp
-            texto = texto_limpo
+            # Remove timestamps [00:00:00]
+            texto_limpo = re.sub(r'^\[\d{2}:\d{2}:\d{2}\]\s*', '', texto_limpo)
+
+            # Remove marcadores técnicos específicos
+            texto_limpo = re.sub(r'^###\s+', '', texto_limpo)
+
+        # CORREÇÃO CRÍTICA: strip() remove o \r\n do início que quebrava o visual
+        texto = texto_limpo.strip()
 
         # 2. Normalização básica pré-processamento
         texto = re.sub(r'^(#+)([^ \n])', r'\1 \2', texto, flags=re.MULTILINE)  # Headers
-        texto = re.sub(r'-{2,}\s*#{2,}', '\n\n', texto)  # Separadores ruins
-        texto = texto.replace("||", "|\n|")  # Quebra de linhas de tabela coladas
+        texto = re.sub(r'-{2,}\s*#{2,}', '\n\n', texto)
+        texto = texto.replace("||", "|\n|")
 
         # 3. Processamento de Blocos (Máquina de Estados para Tabelas)
         lines = texto.splitlines()
         processed_lines = []
         in_table = False
 
-        # Regex simples para identificar se a linha tem cara de tabela (tem pelo menos um pipe)
-        table_row_pattern = re.compile(r'\|')
+        # Regex simples para identificar se a linha tem cara de tabela
+        table_row_pattern = re.compile(r'^\s*\|')
 
         for line in lines:
-            line = line.strip()
-
-            # Se a linha está vazia
-            if not line:
-                if in_table:
-                    continue  # Ignora (remove) linhas vazias DENTRO de tabelas para compactar
-                else:
-                    processed_lines.append('')  # Mantém linhas vazias fora
-                continue
-
-            # Verifica se é linha de tabela (e ignora blocos de código )
-            is_table_row = table_row_pattern.search(line) and not line.startswith('')
+            is_table_row = table_row_pattern.search(line)
 
             if is_table_row:
-                # Normaliza pipes nas bordas (Obrigatório para o parser)
-                if not line.startswith('|'): line = '| ' + line
-                if not line.endswith('|'): line = line + ' |'
+                stripped_line = line.strip()
+                if not stripped_line.startswith('|'): stripped_line = '| ' + stripped_line
+                if not stripped_line.endswith('|'): stripped_line = stripped_line + ' |'
 
                 if not in_table:
-                    # Entrando no modo tabela
                     in_table = True
-                    # Garante linha em branco antes da tabela (Requisito do Markdown)
                     if processed_lines and processed_lines[-1] != '':
                         processed_lines.append('')
 
-                processed_lines.append(line)
+                processed_lines.append(stripped_line)
             else:
                 if in_table:
-                    # Saindo do modo tabela
-                    in_table = False
-                    processed_lines.append('')  # Garante separação ao sair
+                    if not line.strip():
+                        in_table = False
+                        processed_lines.append('')
+                        continue
+                    else:
+                        in_table = False
+                        processed_lines.append('')
 
                 processed_lines.append(line)
 
@@ -116,47 +107,8 @@ class ChatHandler:
         # 4. Ajustes finais e Conversão
         if TEM_MARKDOWN:
             try:
-                # Usa extensões essenciais
                 html = markdown.markdown(texto, extensions=['tables', 'fenced_code', 'nl2br', 'sane_lists'])
-
-                # CSS Injetado (Estilo Limpo e Profissional)
-                estilo_css = """
-                <style>
-                    table {
-                        border-collapse: collapse;
-                        width: 100%;
-                        margin: 1rem 0;
-                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-                        font-size: 14px;
-                        line-height: 1.5;
-                        color: #24292e;
-                        border: 1px solid #dfe2e5;
-                        background-color: #fff;
-                    }
-                    thead {
-                        display: table-header-group;
-                        vertical-align: middle;
-                        border-color: inherit;
-                    }
-                    tr {
-                        background-color: #fff;
-                        border-top: 1px solid #c6cbd1;
-                    }
-                    tr:nth-child(2n) {
-                        background-color: #f6f8fa;
-                    }
-                    th, td {
-                        padding: 8px 13px;
-                        border: 1px solid #dfe2e5;
-                        text-align: left;
-                    }
-                    th {
-                        font-weight: 600;
-                        background-color: #f3f4f4;
-                    }
-                </style>
-                """
-                return estilo_css + html
+                return html
             except Exception as e:
                 print(f"Erro Markdown: {e}")
 
@@ -239,7 +191,6 @@ class ChatHandler:
         js_scroll = "window.scrollTo(0, document.body.scrollHeight);"
 
         js_mathjax = ""
-        # MathJax só roda na mensagem final do bot
         if not streaming and remetente == 'bot':
             js_mathjax = "if(window.MathJax && typeof msg_div !== 'undefined') { MathJax.typesetPromise([msg_div]).then(() => " + js_scroll + "); }"
 
@@ -376,21 +327,39 @@ class MinhaJanela(QWidget):
         self.botao_arquivo.setDisabled(True)
         self.botao_modelo.setDisabled(True)
         self.slider_temp.setDisabled(True)
+        # DESABILITA O HISTÓRICO
+        if hasattr(self, 'widget_historico'):
+            self.widget_historico.setEnabled(False)
 
     def habilitar_controles(self) -> None:
         self.botao_arquivo.setDisabled(False)
         self.botao_modelo.setDisabled(False)
         if self.thread is None or not self.thread.isRunning():
             self.slider_temp.setDisabled(False)
+        # HABILITA O HISTÓRICO
+        if hasattr(self, 'widget_historico'):
+            self.widget_historico.setEnabled(True)
 
     def receber_parte_resposta(self, texto: str, remetente: str):
+        if not self.gerando_resposta:
+            return
+
         if remetente == 'bot':
             self.buffer_resposta_bot += texto
             self.chat_handler.adicionar_html(self.buffer_resposta_bot, remetente, streaming=True)
+
+            if self.historico_atual and self.historico_atual[-1]['role'] == 'bot':
+                self.historico_atual[-1]['content'] = self.buffer_resposta_bot
+            else:
+                self.historico_atual.append({"role": "bot", "content": self.buffer_resposta_bot})
+
+            self.salvar_conversa()
         else:
             pass
 
     def on_resposta_finalizada(self) -> None:
+        if not self.gerando_resposta: return
+
         self.gerando_resposta = False
         self.chat_handler.esconder_digitando()
         self.chat_botao.setIcon(QIcon(f"{self.orig_dir}\\ícones\\seta_enviar.svg"))
@@ -398,9 +367,17 @@ class MinhaJanela(QWidget):
 
         if self.buffer_resposta_bot:
             self.chat_handler.adicionar_html(self.buffer_resposta_bot, 'bot', streaming=False)
-            self.historico_atual.append({"role": "bot", "content": self.buffer_resposta_bot})
+
+            if self.historico_atual and self.historico_atual[-1]['role'] == 'bot':
+                self.historico_atual[-1]['content'] = self.buffer_resposta_bot
+            else:
+                self.historico_atual.append({"role": "bot", "content": self.buffer_resposta_bot})
+
             self.buffer_resposta_bot = ""
             self.salvar_conversa()
+
+        if hasattr(self, 'botao_parar'):
+            self.botao_parar.setVisible(False)
 
     def on_thread_finished(self) -> None:
         if self.gerando_resposta:
@@ -409,11 +386,17 @@ class MinhaJanela(QWidget):
             self.chat_botao.setIcon(QIcon(f"{self.orig_dir}\\ícones\\seta_enviar.svg"))
             self.habilitar_controles()
             if self.buffer_resposta_bot:
-                self.historico_atual.append({"role": "bot", "content": self.buffer_resposta_bot})
+                if self.historico_atual and self.historico_atual[-1]['role'] == 'bot':
+                    self.historico_atual[-1]['content'] = self.buffer_resposta_bot
+                else:
+                    self.historico_atual.append({"role": "bot", "content": self.buffer_resposta_bot})
                 self.salvar_conversa()
 
+        if hasattr(self, 'botao_parar'):
+            self.botao_parar.setVisible(False)
+
     def salvar_conversa(self):
-        novo_nome = funcs.salvar_conversa_json(self.historico_atual, self.nome_arquivo_atual)
+        novo_nome = funcs.salvar_conversa_txt(self.historico_atual, self.nome_arquivo_atual)
         if novo_nome:
             self.nome_arquivo_atual = novo_nome
             self.atualizar_lista_conversas()
@@ -438,8 +421,57 @@ class MinhaJanela(QWidget):
         if hasattr(self, 'botao_parar'):
             self.botao_parar.setVisible(False)
 
+    def parar_geracao(self):
+        """Interrompe a geração e salva o que foi gerado até agora."""
+        if self.gerando_resposta:
+            self.gerando_resposta = False
+
+            if self.thread:
+                try:
+                    self.thread.linha.disconnect()
+                    self.thread.sinal_resposta_finalizada.disconnect()
+                    self.thread.finished.disconnect()
+                except:
+                    pass
+
+                self.thread.stop_thread()
+                self.thread.wait()
+                self.thread.deleteLater()
+                self.thread = None
+
+            self.chat_handler.esconder_digitando()
+            self.chat_botao.setIcon(QIcon(f"{self.orig_dir}\\ícones\\seta_enviar.svg"))
+
+            msg_cancel = estilos.mensagem_operacao_cancelada()
+
+            # SALVA O QUE TEM NO BUFFER
+            if self.buffer_resposta_bot:
+                # Texto para o arquivo: usa Markdown puro
+                texto_para_arquivo = self.buffer_resposta_bot + "\n\n*[Interrompido]*"
+
+                if self.historico_atual and self.historico_atual[-1]['role'] == 'bot':
+                    self.historico_atual[-1]['content'] = texto_para_arquivo
+                else:
+                    self.historico_atual.append({"role": "bot", "content": texto_para_arquivo})
+
+                # Texto para a tela: FORMATA PRIMEIRO o markdown, DEPOIS adiciona o aviso em HTML
+                texto_formatado = self.chat_handler.formatar_texto(self.buffer_resposta_bot, limpar_artefatos=True)
+                texto_tela_final = texto_formatado + "<br><br><i>[Interrompido]</i>"
+
+                # Envia raw_html=True pois já formatamos manualmente acima
+                self.chat_handler.adicionar_html(texto_tela_final, 'bot', raw_html=True, streaming=False)
+
+                self.salvar_conversa()
+
+            self.chat_handler.adicionar_aviso(msg_cancel)
+
+            self.buffer_resposta_bot = ""
+            self.habilitar_controles()
+            if hasattr(self, 'botao_parar'):
+                self.botao_parar.setVisible(False)
+
     def recuperar_conversa(self, nome_arquivo: str) -> None:
-        dados = funcs.ler_conversa_json(nome_arquivo)
+        dados = funcs.ler_conversa_txt(nome_arquivo)
         if not dados: return
         self.nova_conversa()
         self.historico_atual = dados
@@ -467,12 +499,13 @@ class MinhaJanela(QWidget):
 
             for conversa in funcs.listar_conversas():
                 caminho = os.path.join(os.getcwd(), "data", "conversas", conversa)
-                texto_botao = conversa.replace(".json", "").replace("_", " ")[:18]
+                texto_botao = conversa.replace(".txt", "").replace("_", " ")[:18]
                 try:
                     with open(caminho, 'r', encoding='utf-8') as f:
-                        dados = json.load(f)
-                        if dados and len(dados) > 0:
-                            texto_botao = dados[0]['content'][:18] + "..."
+                        lines = f.readlines()
+                        if len(lines) >= 2:
+                            conteudo = lines[1].strip().replace('__BR__', ' ')
+                            texto_botao = conteudo[:18] + "..."
                 except:
                     pass
 
@@ -502,31 +535,7 @@ class MinhaJanela(QWidget):
 
         def click_botao_prompt() -> None:
             if self.gerando_resposta:
-                if self.thread and self.thread.isRunning():
-                    try:
-                        self.thread.linha.disconnect()
-                        self.thread.sinal_resposta_finalizada.disconnect()
-                        self.thread.finished.disconnect()
-                    except:
-                        pass
-                    self.thread.stop_thread()
-                    self.thread.wait()
-                    self.thread.deleteLater()
-                    self.thread = None
-
-                self.gerando_resposta = False
-                self.chat_handler.esconder_digitando()
-                self.chat_botao.setIcon(QIcon(f"{self.orig_dir}\\ícones\\seta_enviar.svg"))
-
-                msg_cancel = estilos.mensagem_operacao_cancelada()
-
-                if self.buffer_resposta_bot:
-                    self.chat_handler.adicionar_html(self.buffer_resposta_bot, 'bot', streaming=False)
-                    self.historico_atual.append({"role": "bot", "content": self.buffer_resposta_bot + " [Cancelado]"})
-
-                self.chat_handler.adicionar_aviso(msg_cancel)
-                self.buffer_resposta_bot = ""
-                self.habilitar_controles()
+                self.parar_geracao()
                 return
 
             texto = self.chat_prompt.toPlainText().strip()
@@ -538,6 +547,8 @@ class MinhaJanela(QWidget):
             self.desabilitar_controles()
 
             self.historico_atual.append({"role": "user", "content": texto})
+            self.salvar_conversa()
+
             self.buffer_resposta_bot = ""
 
             self.chat_handler.adicionar_html(texto, 'user', streaming=False)
@@ -584,7 +595,6 @@ class MinhaJanela(QWidget):
             try:
                 nome_arquivo, dados_arquivo = funcs.carregar_arquivo()
                 if nome_arquivo:
-                    # ALTERADO DE setHtml PARA setText
                     self.arquivo_carregado.setText(nome_arquivo)
                     self.arquivo_carregado.setAlignment(Qt.AlignmentFlag.AlignCenter)
             except Exception as e:
@@ -722,7 +732,7 @@ class MinhaJanela(QWidget):
            QPushButton:hover { background-color: #ffaaaa; }
            QPushButton:pressed { background-color: #ff8888; }
        """)
-        self.botao_parar.clicked.connect(self.nova_conversa)
+        self.botao_parar.clicked.connect(self.parar_geracao)
         self.botao_parar.setVisible(False)
 
         self.botao_arquivo = QPushButton("Carregar Arquivo")
@@ -733,7 +743,6 @@ class MinhaJanela(QWidget):
         self.botao_arquivo.setStyleSheet(estilos.estilo_botao_arquivo())
         self.botao_arquivo.clicked.connect(carregar_arquivo)
 
-        # --- MODIFICAÇÃO: SUBSTITUÍDO QTextEdit POR QLineEdit PARA ARREDONDAMENTO CORRETO ---
         self.arquivo_carregado = QLineEdit()
         self.arquivo_carregado.setReadOnly(True)
         self.arquivo_carregado.setText("Nenhum arquivo carregado")
@@ -851,7 +860,6 @@ class MinhaJanela(QWidget):
 
         sobre.clicked.connect(lambda: sobre_pop((480, 300)))
         layout_sidebar.addWidget(sobre)
-        layout_sidebar.addWidget(QPushButton("Opção 3"))
         layout_sidebar.addSpacing(15)
 
         titulo_conversas = QLabel("Histórico")
@@ -860,8 +868,13 @@ class MinhaJanela(QWidget):
         layout_sidebar.addWidget(titulo_conversas)
         layout_sidebar.addSpacing(5)
 
-        self.layout_lista_conversas = QVBoxLayout()
-        layout_sidebar.addLayout(self.layout_lista_conversas)
+        # CRIAÇÃO DO CONTAINER PARA O HISTÓRICO
+        self.widget_historico = QWidget()
+        self.layout_lista_conversas = QVBoxLayout(self.widget_historico)  # Layout associado ao widget
+        self.layout_lista_conversas.setContentsMargins(0, 0, 0, 0)
+
+        layout_sidebar.addWidget(self.widget_historico)  # Adiciona o widget ao sidebar
+
         self.atualizar_lista_conversas()
 
         maximizador_menu = QPushButton()
