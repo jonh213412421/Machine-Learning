@@ -37,14 +37,11 @@ class PromptThread(QThread):
         self.prompt_queue.put(prompt)
 
     def _reader_loop(self):
-        # Com stderr separado, a lista de ignorar pode ser mínima
-        # focando apenas em artefatos de prompt do stdout.
         text_buffer = ""
         byte_buffer = bytearray()
 
         while self.thread_running and self.proc:
             try:
-                # Leitura byte a byte para streaming fluido
                 byte = self.proc.stdout.read(1)
 
                 if not byte:
@@ -63,40 +60,51 @@ class PromptThread(QThread):
 
                 text_buffer += char
 
-                # Processa a cada quebra de linha OU a cada 50 caracteres (AJUSTE SOLICITADO)
+                # 1. Emissão por quebra de linha ou limite de caracteres
                 if char == '\n' or len(text_buffer) >= 50:
+                    # Limpa apenas códigos ANSI, mas MANTÉM espaços e quebras de linha (\n)
+                    texto_raw = self.limpar_ansi(text_buffer)
 
-                    if char == '\n':
-                        # Se for quebra de linha, usamos strip() para limpar e verificar lixo
-                        texto_limpo = self.limpar_ansi(text_buffer.strip())
-                    else:
-                        # Se for limite de buffer, NÃO usamos strip() para preservar espaços entre palavras
-                        texto_limpo = self.limpar_ansi(text_buffer)
+                    # Cria versão limpa apenas para verificação de lixo
+                    texto_check = texto_raw.strip()
+
+                    eh_lixo = False
+                    # Se for apenas o prompt do sistema, marca como lixo
+                    if texto_check in [">", ">>>"]:
+                        eh_lixo = True
+
+                    if not eh_lixo:
+                        # Se detectar vazamento de prompt (ex: "> Olá"), limpa apenas o início
+                        if texto_check.startswith("> "):
+                            texto_raw = re.sub(r'^\s*> ', '', texto_raw, count=1)
+
+                        # IMPORTANTE: Emite o texto RAW (com espaços e \n) para a interface
+                        # Isso garante que a formatação do bot não seja perdida
+                        self.linha.emit(texto_raw, 'bot')
 
                     text_buffer = ""
 
-                    eh_lixo = False
-                    # Filtra apenas prompts vazios ou marcadores de input
-                    if not texto_limpo: eh_lixo = True
-                    if texto_limpo in [">", ">>>"]: eh_lixo = True
+                # 2. Detecção robusta de Fim de Turno (Prompt)
+                elif text_buffer.endswith(">") or text_buffer.endswith("> ") or \
+                        text_buffer.endswith(">>>") or text_buffer.endswith(">>> "):
 
-                    if not eh_lixo:
-                        # Remove prefixo de prompt se vazar (ex: "> Olá")
-                        if texto_limpo.startswith("> "): texto_limpo = texto_limpo[2:]
-                        self.linha.emit(texto_limpo, 'bot')
+                    # Verifica se realmente é o prompt final
+                    limpo = self.limpar_ansi(text_buffer)
+                    match_prompt = re.search(r'(>|>>>)\s*$', limpo)
 
-                # Detecção do fim de geração pelo prompt do llama-cli
-                elif text_buffer.endswith(">") or text_buffer.endswith(">>>"):
-                    # Verifica se é apenas o prompt de input
-                    limpo = self.limpar_ansi(text_buffer).strip()
+                    if match_prompt:
+                        conteudo = limpo[:match_prompt.start()]
 
-                    if limpo in [">", ">>>"]:
+                        # Se sobrou texto válido antes do prompt, emite agora
+                        if conteudo:
+                            self.linha.emit(conteudo, 'bot')
+
                         if self.ignorar_primeiro_prompt:
                             self.ignorar_primeiro_prompt = False
-                            text_buffer = ""
                         else:
                             self.sinal_resposta_finalizada.emit()
-                            text_buffer = ""
+
+                        text_buffer = ""
 
             except Exception as e:
                 print(f"Erro leitura: {e}")
@@ -129,13 +137,12 @@ class PromptThread(QThread):
             "--interactive",
             "--conversation",
             "--temp", str(self.temperature),
-            "--no-display-prompt"  # Evita que o sistema repita o prompt inicial na tela
+            "--no-display-prompt"
         ]
 
         try:
             flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
-            # CORREÇÃO: stderr=subprocess.DEVNULL joga fora os logs técnicos
             self.proc = subprocess.Popen(
                 cmd,
                 stdin=subprocess.PIPE,
