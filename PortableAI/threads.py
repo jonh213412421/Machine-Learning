@@ -15,7 +15,6 @@ class PromptThread(QThread):
     botao_prompt = pyqtSignal(bool)
     sinal_resposta_finalizada = pyqtSignal()
 
-    # Atualizado __init__ para receber temperature em vez de system_prompt
     def __init__(self, modelo, temperature=0.7, n_experts=0):
         super().__init__()
         self.modelo = modelo
@@ -38,21 +37,14 @@ class PromptThread(QThread):
         self.prompt_queue.put(prompt)
 
     def _reader_loop(self):
-        ignore_list = [
-            "load_backend:", "build:", "main:", "print_info:", "load:",
-            "load_tensors:", "common_init_from_params:", "sampler",
-            "generate:", "== Running", "- Press", "- To return",
-            "- If you want", "- Not using", "system_info:", "......",
-            "repeat_last_n", "dry_multiplier", "top_k",
-            "mirostat", "repeat_penalty", "frequency_penalty",
-            "You are a helpful assistant", "Hello<|im_end|>", "Hi there", "How are you?"
-        ]
-
+        # Com stderr separado, a lista de ignorar pode ser mínima
+        # focando apenas em artefatos de prompt do stdout.
         text_buffer = ""
         byte_buffer = bytearray()
 
         while self.thread_running and self.proc:
             try:
+                # Leitura byte a byte para streaming fluido
                 byte = self.proc.stdout.read(1)
 
                 if not byte:
@@ -71,23 +63,31 @@ class PromptThread(QThread):
 
                 text_buffer += char
 
-                if char == '\n':
-                    texto_limpo = self.limpar_ansi(text_buffer.strip())
+                # Processa a cada quebra de linha OU a cada 50 caracteres (AJUSTE SOLICITADO)
+                if char == '\n' or len(text_buffer) >= 50:
+
+                    if char == '\n':
+                        # Se for quebra de linha, usamos strip() para limpar e verificar lixo
+                        texto_limpo = self.limpar_ansi(text_buffer.strip())
+                    else:
+                        # Se for limite de buffer, NÃO usamos strip() para preservar espaços entre palavras
+                        texto_limpo = self.limpar_ansi(text_buffer)
+
                     text_buffer = ""
 
                     eh_lixo = False
-                    for prefix in ignore_list:
-                        if texto_limpo.startswith(prefix):
-                            eh_lixo = True
-                            break
-                    if texto_limpo.startswith("llama_"): eh_lixo = True
+                    # Filtra apenas prompts vazios ou marcadores de input
+                    if not texto_limpo: eh_lixo = True
                     if texto_limpo in [">", ">>>"]: eh_lixo = True
 
-                    if not eh_lixo and texto_limpo:
+                    if not eh_lixo:
+                        # Remove prefixo de prompt se vazar (ex: "> Olá")
                         if texto_limpo.startswith("> "): texto_limpo = texto_limpo[2:]
                         self.linha.emit(texto_limpo, 'bot')
 
+                # Detecção do fim de geração pelo prompt do llama-cli
                 elif text_buffer.endswith(">") or text_buffer.endswith(">>>"):
+                    # Verifica se é apenas o prompt de input
                     limpo = self.limpar_ansi(text_buffer).strip()
 
                     if limpo in [">", ">>>"]:
@@ -123,27 +123,24 @@ class PromptThread(QThread):
         except ValueError:
             caminho_modelo_relativo = self.model_path
 
-        # Monta o comando com o argumento de temperatura
         cmd = [
             caminho_executavel,
             "-m", caminho_modelo_relativo,
             "--interactive",
             "--conversation",
-            "--temp", str(self.temperature)  # Adicionado controle de temperatura
+            "--temp", str(self.temperature),
+            "--no-display-prompt"  # Evita que o sistema repita o prompt inicial na tela
         ]
-
-        # Argumento opcional de experts (se suportado no futuro)
-        # if self.n_experts > 0:
-        #     cmd.extend(["-ne", str(self.n_experts)])
 
         try:
             flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
+            # CORREÇÃO: stderr=subprocess.DEVNULL joga fora os logs técnicos
             self.proc = subprocess.Popen(
                 cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
+                stderr=subprocess.DEVNULL,
                 text=False,
                 bufsize=0,
                 cwd=pasta_llama,
