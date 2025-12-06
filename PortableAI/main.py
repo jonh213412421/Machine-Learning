@@ -43,37 +43,31 @@ class ChatHandler:
     def formatar_texto(self, texto: str, limpar_artefatos: bool = True) -> str:
         """
         Formata o texto para HTML/Markdown.
-        :param texto: O texto a ser formatado.
-        :param limpar_artefatos: Se True, remove saudações e artefatos de IA (usar apenas para o Bot).
         """
-        texto_limpo = texto
+        # Remove caracteres de retorno de carro (\r)
+        texto_limpo = texto.replace('\r', '')
 
-        # 1. Limpeza de artefatos (Garbage Collection Refinada) - APENAS SE SOLICITADO
         if limpar_artefatos:
-            # REGEX CORRIGIDO: Remove apenas rótulos específicos
-            padrao_roles = r'^[\s\r\n]*(?:system|user|assistant|analysis|model|context)(?:\s*[:\-])?\s*'
+            # Remove cabeçalhos técnicos
+            padrao_roles = r'^[\s\n]*(?:system|user|assistant|analysis|model|context)(?:\s*[:\-])?\s*'
             texto_limpo = re.sub(padrao_roles, '', texto_limpo, flags=re.IGNORECASE)
 
-            # Remove timestamps [00:00:00]
+            # Remove timestamps e marcadores
             texto_limpo = re.sub(r'^\[\d{2}:\d{2}:\d{2}\]\s*', '', texto_limpo)
-
-            # Remove marcadores técnicos específicos
             texto_limpo = re.sub(r'^###\s+', '', texto_limpo)
 
-        # CORREÇÃO CRÍTICA: strip() remove o \r\n do início que quebrava o visual
+        # Remove espaços/quebras do início para evitar blocos vazios
         texto = texto_limpo.strip()
 
-        # 2. Normalização básica pré-processamento
-        texto = re.sub(r'^(#+)([^ \n])', r'\1 \2', texto, flags=re.MULTILINE)  # Headers
+        # Normalização básica
+        texto = re.sub(r'^(#+)([^ \n])', r'\1 \2', texto, flags=re.MULTILINE)
         texto = re.sub(r'-{2,}\s*#{2,}', '\n\n', texto)
         texto = texto.replace("||", "|\n|")
 
-        # 3. Processamento de Blocos (Máquina de Estados para Tabelas)
+        # Processamento de Tabelas (mantido igual para garantir formatação)
         lines = texto.splitlines()
         processed_lines = []
         in_table = False
-
-        # Regex simples para identificar se a linha tem cara de tabela
         table_row_pattern = re.compile(r'^\s*\|')
 
         for line in lines:
@@ -104,7 +98,6 @@ class ChatHandler:
 
         texto = '\n'.join(processed_lines)
 
-        # 4. Ajustes finais e Conversão
         if TEM_MARKDOWN:
             try:
                 html = markdown.markdown(texto, extensions=['tables', 'fenced_code', 'nl2br', 'sane_lists'])
@@ -171,12 +164,14 @@ class ChatHandler:
         self.chat_tela.page().runJavaScript(js)
 
     def adicionar_html(self, texto: str, remetente: str, raw_html: bool = False, streaming: bool = False) -> None:
-        if not self.chat_tela: return
+        if not self.chat_tela:
+            return
 
+        # Formatar o texto
         if raw_html:
             texto_final = texto
         else:
-            if remetente == 'bot':
+            if remetente in ['bot', 'assistant']:
                 texto_final = self.formatar_texto(texto, limpar_artefatos=True)
             elif remetente == 'user':
                 texto_final = self.formatar_texto(texto, limpar_artefatos=False)
@@ -191,8 +186,11 @@ class ChatHandler:
         js_scroll = "window.scrollTo(0, document.body.scrollHeight);"
 
         js_mathjax = ""
-        if not streaming and remetente == 'bot':
-            js_mathjax = "if(window.MathJax && typeof msg_div !== 'undefined') { MathJax.typesetPromise([msg_div]).then(() => " + js_scroll + "); }"
+        if not streaming and remetente in ['bot', 'assistant']:
+            js_mathjax = """
+            if(window.MathJax && typeof msg_div !== 'undefined') { 
+                MathJax.typesetPromise([msg_div]).then(() => {""" + js_scroll + """}); 
+            }"""
 
         if remetente == 'user':
             wrapper_id = f"msg_{self.j}"
@@ -202,36 +200,36 @@ class ChatHandler:
             self.j += 1
 
             js = f"""
-            (function() {{
+            (function(){{
                 var chat = document.getElementById('chat');
-                if (!chat) return;
+                if(!chat) return;
 
                 var wrapper = document.createElement('div');
                 wrapper.id = '{wrapper_id}';
                 wrapper.className = '{wrapper_class} msg-wrapper';
                 var msg = document.createElement('div');
                 msg.className = '{msg_class} msg';
-                msg.innerHTML = {js_content}; 
+                msg.innerHTML = {js_content};
                 wrapper.appendChild(msg);
                 chat.appendChild(wrapper);
 
                 var typing = document.getElementById('typing_indicator');
-                if (typing) chat.appendChild(typing);
+                if(typing) chat.appendChild(typing);
 
                 {js_scroll}
             }})();
             """
 
-        else:  # BOT
+        else:  # bot/assistant
             if not self.div_bot_criada:
                 wrapper_id = f"msg_{self.j}"
                 self.div_bot_criada = True
                 self.j += 1
 
                 js = f"""
-                (function() {{
+                (function(){{
                     var chat = document.getElementById('chat');
-                    if (!chat) return;
+                    if(!chat) return;
 
                     var wrapper = document.createElement('div');
                     wrapper.id = '{wrapper_id}';
@@ -243,9 +241,13 @@ class ChatHandler:
                     wrapper.appendChild(msg);
                     chat.appendChild(wrapper);
 
-                    var typing = document.getElementById('typing_indicator');
-                    if (typing) chat.appendChild(typing);
-                    else if ({str(streaming).lower()}) {{
+                    // Remove typing indicator antigo se existir
+                    var existingTyping = document.getElementById('typing_indicator');
+                    if(existingTyping) {{
+                        chat.removeChild(existingTyping);
+                    }}
+
+                    if({str(streaming).lower()}) {{
                         var tWrap = document.createElement('div');
                         tWrap.id = 'typing_indicator';
                         tWrap.className = 'msg-wrapper bot-wrapper';
@@ -254,36 +256,36 @@ class ChatHandler:
                     }}
 
                     {js_mathjax}
-                    if (!window.MathJax) {{ {js_scroll} }}
+                    if(!window.MathJax) {{ {js_scroll} }}
                 }})();
                 """
             else:
                 prev_id = f"msg_{self.j - 1}"
 
                 js = f"""
-                (function() {{
+                (function(){{
                     var wrapper = document.getElementById('{prev_id}');
-                    if (wrapper) {{
+                    if(wrapper) {{
                         var msg_div = wrapper.querySelector('.bot');
                         msg_div.innerHTML = {js_content};
 
                         var chat = document.getElementById('chat');
                         var typing = document.getElementById('typing_indicator');
 
-                        if ({str(streaming).lower()}) {{
-                             if (!typing) {{
-                                 var tWrap = document.createElement('div');
-                                 tWrap.id = 'typing_indicator';
-                                 tWrap.className = 'msg-wrapper bot-wrapper';
-                                 tWrap.innerHTML = '<div class="msg bot"><div class="typing"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div></div>';
-                                 chat.appendChild(tWrap);
-                             }} else if (chat.lastElementChild !== typing) {{
-                                 chat.appendChild(typing);
-                             }}
+                        if({str(streaming).lower()}) {{
+                            if(!typing) {{
+                                var tWrap = document.createElement('div');
+                                tWrap.id = 'typing_indicator';
+                                tWrap.className = 'msg-wrapper bot-wrapper';
+                                tWrap.innerHTML = '<div class="msg bot"><div class="typing"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div></div>';
+                                chat.appendChild(tWrap);
+                            }} else if(chat.lastElementChild !== typing) {{
+                                chat.appendChild(typing);
+                            }}
                         }}
 
                         {js_mathjax}
-                        if (!window.MathJax) {{ {js_scroll} }}
+                        if(!window.MathJax) {{ {js_scroll} }}
                     }}
                 }})();
                 """
@@ -327,7 +329,6 @@ class MinhaJanela(QWidget):
         self.botao_arquivo.setDisabled(True)
         self.botao_modelo.setDisabled(True)
         self.slider_temp.setDisabled(True)
-        # DESABILITA O HISTÓRICO
         if hasattr(self, 'widget_historico'):
             self.widget_historico.setEnabled(False)
 
@@ -336,22 +337,21 @@ class MinhaJanela(QWidget):
         self.botao_modelo.setDisabled(False)
         if self.thread is None or not self.thread.isRunning():
             self.slider_temp.setDisabled(False)
-        # HABILITA O HISTÓRICO
         if hasattr(self, 'widget_historico'):
             self.widget_historico.setEnabled(True)
 
     def receber_parte_resposta(self, texto: str, remetente: str):
-        if not self.gerando_resposta:
-            return
+        if not self.gerando_resposta: return
 
         if remetente == 'bot':
             self.buffer_resposta_bot += texto
-            self.chat_handler.adicionar_html(self.buffer_resposta_bot, remetente, streaming=True)
+            self.chat_handler.adicionar_html(self.buffer_resposta_bot, 'assistant', streaming=True)
 
-            if self.historico_atual and self.historico_atual[-1]['role'] == 'bot':
+            # ATUALIZAÇÃO EM TEMPO REAL
+            if self.historico_atual and self.historico_atual[-1]['role'] == 'assistant':
                 self.historico_atual[-1]['content'] = self.buffer_resposta_bot
             else:
-                self.historico_atual.append({"role": "bot", "content": self.buffer_resposta_bot})
+                self.historico_atual.append({"role": "assistant", "content": self.buffer_resposta_bot})
 
             self.salvar_conversa()
         else:
@@ -366,12 +366,12 @@ class MinhaJanela(QWidget):
         self.habilitar_controles()
 
         if self.buffer_resposta_bot:
-            self.chat_handler.adicionar_html(self.buffer_resposta_bot, 'bot', streaming=False)
+            self.chat_handler.adicionar_html(self.buffer_resposta_bot, 'assistant', streaming=False)
 
-            if self.historico_atual and self.historico_atual[-1]['role'] == 'bot':
+            if self.historico_atual and self.historico_atual[-1]['role'] == 'assistant':
                 self.historico_atual[-1]['content'] = self.buffer_resposta_bot
             else:
-                self.historico_atual.append({"role": "bot", "content": self.buffer_resposta_bot})
+                self.historico_atual.append({"role": "assistant", "content": self.buffer_resposta_bot})
 
             self.buffer_resposta_bot = ""
             self.salvar_conversa()
@@ -386,16 +386,17 @@ class MinhaJanela(QWidget):
             self.chat_botao.setIcon(QIcon(f"{self.orig_dir}\\ícones\\seta_enviar.svg"))
             self.habilitar_controles()
             if self.buffer_resposta_bot:
-                if self.historico_atual and self.historico_atual[-1]['role'] == 'bot':
+                if self.historico_atual and self.historico_atual[-1]['role'] == 'assistant':
                     self.historico_atual[-1]['content'] = self.buffer_resposta_bot
                 else:
-                    self.historico_atual.append({"role": "bot", "content": self.buffer_resposta_bot})
+                    self.historico_atual.append({"role": "assistant", "content": self.buffer_resposta_bot})
                 self.salvar_conversa()
 
         if hasattr(self, 'botao_parar'):
             self.botao_parar.setVisible(False)
 
     def salvar_conversa(self):
+        # USA A NOVA FUNÇÃO DE TXT
         novo_nome = funcs.salvar_conversa_txt(self.historico_atual, self.nome_arquivo_atual)
         if novo_nome:
             self.nome_arquivo_atual = novo_nome
@@ -444,23 +445,18 @@ class MinhaJanela(QWidget):
 
             msg_cancel = estilos.mensagem_operacao_cancelada()
 
-            # SALVA O QUE TEM NO BUFFER
             if self.buffer_resposta_bot:
-                # Texto para o arquivo: usa Markdown puro
                 texto_para_arquivo = self.buffer_resposta_bot + "\n\n*[Interrompido]*"
 
-                if self.historico_atual and self.historico_atual[-1]['role'] == 'bot':
+                if self.historico_atual and self.historico_atual[-1]['role'] == 'assistant':
                     self.historico_atual[-1]['content'] = texto_para_arquivo
                 else:
-                    self.historico_atual.append({"role": "bot", "content": texto_para_arquivo})
+                    self.historico_atual.append({"role": "assistant", "content": texto_para_arquivo})
 
-                # Texto para a tela: FORMATA PRIMEIRO o markdown, DEPOIS adiciona o aviso em HTML
                 texto_formatado = self.chat_handler.formatar_texto(self.buffer_resposta_bot, limpar_artefatos=True)
                 texto_tela_final = texto_formatado + "<br><br><i>[Interrompido]</i>"
 
-                # Envia raw_html=True pois já formatamos manualmente acima
-                self.chat_handler.adicionar_html(texto_tela_final, 'bot', raw_html=True, streaming=False)
-
+                self.chat_handler.adicionar_html(texto_tela_final, 'assistant', raw_html=True, streaming=False)
                 self.salvar_conversa()
 
             self.chat_handler.adicionar_aviso(msg_cancel)
@@ -473,11 +469,25 @@ class MinhaJanela(QWidget):
     def recuperar_conversa(self, nome_arquivo: str) -> None:
         dados = funcs.ler_conversa_txt(nome_arquivo)
         if not dados: return
+
         self.nova_conversa()
         self.historico_atual = dados
         self.nome_arquivo_atual = nome_arquivo
+
+        # 🔧 RESET IMPORTANTE
+        self.chat_handler.div_bot_criada = False
+
         for msg in self.historico_atual:
-            self.chat_handler.adicionar_html(msg['content'], msg['role'], streaming=False)
+            role = msg.get('role', 'user')
+            if role == 'bot':
+                role = 'assistant'
+
+            # 🔧 cada vez que for um usuário, reseta (comportamento padrão)
+            if role == 'user':
+                self.chat_handler.div_bot_criada = False
+            print("ROLE LIDO:", role, "| TEXTO:", msg.get("content"))
+
+            self.chat_handler.adicionar_html(msg.get('content', ''), role, streaming=False)
 
     def excluir_conversa(self, nome_arquivo: str) -> None:
         if funcs.excluir_conversa(nome_arquivo):
@@ -498,14 +508,19 @@ class MinhaJanela(QWidget):
             self.layout_lista_conversas.addSpacing(5)
 
             for conversa in funcs.listar_conversas():
+                # Lista apenas os .txt agora
                 caminho = os.path.join(os.getcwd(), "data", "conversas", conversa)
                 texto_botao = conversa.replace(".txt", "").replace("_", " ")[:18]
                 try:
+                    # Lógica de preview simplificada
                     with open(caminho, 'r', encoding='utf-8') as f:
-                        lines = f.readlines()
-                        if len(lines) >= 2:
-                            conteudo = lines[1].strip().replace('__BR__', ' ')
-                            texto_botao = conteudo[:18] + "..."
+                        conteudo = f.read()
+                        # Tenta achar o separador e pegar o conteúdo da primeira msg
+                        partes = conteudo.split(funcs.SEPARADOR_CAMPO)
+                        if len(partes) > 1:
+                            # O conteúdo está na parte 1, mas pode ter o separador de msg no final
+                            msg_content = partes[1].split(funcs.SEPARADOR_MSG)[0]
+                            texto_botao = msg_content[:18] + "..."
                 except:
                     pass
 
@@ -868,7 +883,7 @@ class MinhaJanela(QWidget):
         layout_sidebar.addWidget(titulo_conversas)
         layout_sidebar.addSpacing(5)
 
-        # CRIAÇÃO DO CONTAINER PARA O HISTÓRICO
+        # CRIAÇÃO DO CONTAINER PARA O HISTÓRICO (BLOQUEAVEL)
         self.widget_historico = QWidget()
         self.layout_lista_conversas = QVBoxLayout(self.widget_historico)  # Layout associado ao widget
         self.layout_lista_conversas.setContentsMargins(0, 0, 0, 0)
